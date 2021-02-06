@@ -3,7 +3,7 @@ from .log import warning
 
 
 class CorrectiveVelocityFactor:
-    def __init__(self, depth, ksp, bed_reference_height, settling_velocity, ustar):
+    def __init__(self, depth, ksp, a, settling_velocity, ustar):
         """
         Set up advective velocity factor `self.velocity_correction_factor`
         which accounts for mismatch between depth-averaged product of
@@ -15,14 +15,12 @@ class CorrectiveVelocityFactor:
         :arg ksp: Grain roughness coefficient
         :type ksp: :class:`Constant`
         :arg bed_reference_height: Bottom bed reference height
-        :type bed_reference_height: :class:`Constant`
+        :type a: :class:`Constant`
         :arg settling_velocity: Settling velocity of the sediment particles
         :type settling_velocity: :class:`Constant`
         :arg ustar: Shear velocity
         :type ustar: :class:`Expression of functions`
         """
-
-        a = Constant(bed_reference_height/2)
 
         kappa = physical_constants['von_karman']
 
@@ -119,7 +117,7 @@ class SedimentModel(object):
         kappa = physical_constants['von_karman']
 
         ksp = Constant(3*self.average_size)
-        self.a = Constant(self.bed_reference_height/2)
+        self.a = Function(self.P1_2d).interpolate(self.bed_reference_height/2)
         if self.options.sediment_model_options.morphological_viscosity is None:
             self.viscosity = self.options.horizontal_viscosity
         else:
@@ -217,7 +215,7 @@ class SedimentModel(object):
 
             if self.use_advective_velocity_correction:
                 correction_factor_model = CorrectiveVelocityFactor(self.fields.depth, ksp,
-                                                                   self.bed_reference_height, self.settling_velocity, ustar)
+                                                                   self.a, self.settling_velocity, ustar)
                 self.update_steps['correction_factor'] = correction_factor_model.update
                 self.fields.velocity_correction_factor = correction_factor_model.velocity_correction_factor
             self._add_interpolation_step('equilibrium_tracer', self.fields.erosion_concentration/self.fields.integrated_rouse, V=self.P1DG_2d)
@@ -349,8 +347,14 @@ class SedimentModel(object):
             self.sigma = 5.0*degree_h*(degree_h + 1)/CellSize(self.mesh2d)
 
         # define bed gradient
-        dzdx = self.fields.old_bathymetry_2d.dx(0)
-        dzdy = self.fields.old_bathymetry_2d.dx(1)
+        x, y = SpatialCoordinate(self.mesh2d)
+
+        if self.options.sediment_model_options.slide_region is not None:
+            dzdx = conditional(x < self.options.sediment_model_options.slide_region, bathymetry.dx(0), Constant(0.0))
+            dzdy = conditional(x < self.options.sediment_model_options.slide_region, bathymetry.dx(1), Constant(0.0))
+        else:
+            dzdx = bathymetry.dx(0)
+            dzdy = bathymetry.dx(1)
 
         # calculate normal to the bed
         nz = 1/sqrt(1 + (dzdx**2 + dzdy**2))
@@ -364,7 +368,7 @@ class SedimentModel(object):
         alphaconst = conditional(sqrt(1 - (nz**2)) > 0, - qaval*(nz**2)/sqrt(1 - (nz**2)), 0)
 
         diff_tensor = as_matrix([[alphaconst, 0, ], [0, alphaconst, ]])
-        
+
         return diff_tensor
 
     def get_deposition_coefficient(self):
