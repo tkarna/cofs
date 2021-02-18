@@ -531,7 +531,7 @@ class SedimentModelOptions(FrozenHasTraits):
     use_angle_correction = Bool(True, help='Switch to use slope effect angle correction').tag(config=True)
     use_slope_mag_correction = Bool(True, help='Switch to use slope effect magnitude correction').tag(config=True)
     use_secondary_current = Bool(False, help='Switch to use secondary current for helical flow effect').tag(config=True)
-    average_sediment_size = NonNegativeFloat(allow_none=False, help='Average sediment size').tag(config=True)
+    average_sediment_size = FiredrakeScalarExpression(None, allow_none=True, help='Average sediment size').tag(config=True)
     slide_region = NonNegativeFloat(None, allow_none=True, help='Region where sediment slide occurs. If None then sediment slide occurs over whole domain.').tag(config=True)
     bed_reference_height = FiredrakeScalarExpression(None, allow_none=True, help='Bottom bed reference height').tag(config=True)
     use_advective_velocity_correction = Bool(True, help="""
@@ -555,7 +555,7 @@ class SedimentModelOptions(FrozenHasTraits):
         None, allow_none=True, help="""Viscosity used to derive morphology terms.
 
         Usually equal to horizontal viscosity but can be set to have a different value""").tag(config=True)
-    sediment_density = FiredrakeConstantTraitlet(
+    sediment_density = FiredrakeScalarExpression(
         Constant(2650), help='Density of sediment').tag(config=True)
     secondary_current_parameter = FiredrakeConstantTraitlet(
         Constant(0.75), help='Parameter controlling secondary current').tag(config=True)
