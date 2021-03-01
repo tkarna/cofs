@@ -172,7 +172,29 @@ class AdjointHUDivContinuityTerm(AdjointBCMixin, HUDivTerm):
 
 
 class AdjointHorizontalAdvectionTerm(AdjointBCMixin, HorizontalAdvectionTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the nonlinear advection term by velocity.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        if not self.options.use_nonlinear_equations:
+            return 0
+
+        horiz_advection_by_parts = True
+
+        uv = fields.get('uv_2d')
+        un = 0.5*(abs(dot(uv, self.normal)) - dot(uv, self.normal))  # u.n if u.n < 0 else 0
+        downwind = lambda x: conditional(un < 0, dot(x, self.normal), 0)
+
+        f = 0
+        f += -inner(dot(self.u_test, nabla_grad(uv)), z)*self.dx
+        f += -inner(dot(uv, nabla_grad(self.u_test)), z)*self.dx
+        if horiz_advection_by_parts:
+            f += inner(jump(self.u_test), 2*avg(un*z))*self.dS
+            f += inner(2*avg(downwind(self.u_test)*z), jump(uv))*self.dS
+            # TODO: Boundary contributions?
+            # TODO: Stabilisation?
+
+        return -f
 
 
 class AdjointHorizontalViscosityTerm(AdjointBCMixin, HorizontalViscosityTerm):
