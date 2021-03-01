@@ -233,7 +233,41 @@ class AdjointWindStressTerm(ShallowWaterContinuityTerm):
 
 
 class AdjointQuadraticDragMomentumTerm(ShallowWaterMomentumTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the quadratic drag term with respect to velocity.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        if not self.options.use_nonlinear_equations:
+            return 0
+
+        total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        manning_drag_coefficient = fields_old.get('manning_drag_coefficient')
+        nikuradse_bed_roughness = fields_old.get('nikuradse_bed_roughness')
+        C_D = fields_old.get('quadratic_drag_coefficient')
+        f = 0
+        if manning_drag_coefficient is not None:
+            if C_D is not None:
+                raise Exception('Cannot set both dimensionless and Manning drag parameter')
+            C_D = g_grav*manning_drag_coefficient**2/total_h**(1./3.)
+        if nikuradse_bed_roughness is not None:
+            if manning_drag_coefficient is not None:
+                raise Exception('Cannot set both Nikuradse drag and Manning drag parameter')
+            if C_D is not None:
+                raise Exception('Cannot set both dimensionless and Nikuradse drag parameter')
+
+            kappa = physical_constants['von_karman']
+            C_D = conditional(total_h > nikuradse_bed_roughness, 2*(kappa**2)/(ln(11.036*total_h/nikuradse_bed_roughness)**2), Constant(0.0))
+        if C_D is None:
+            return -f
+
+        uv = fields.get('uv_2d')
+        if uv is None:
+            raise Exception('Adjoint equation does not have access to forward solution velocity')
+
+        unorm = sqrt(dot(uv, uv) + self.options.norm_smoother**2)
+        f += -C_D*unorm*inner(self.u_test, z)*self.dx
+        f += -C_D*inner(self.u_test, uv)*inner(z, uv)/unorm*self.dx
+        return -f
 
 
 class AdjointQuadraticDragContinuityTerm(ShallowWaterContinuityTerm):
