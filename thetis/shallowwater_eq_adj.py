@@ -87,7 +87,46 @@ class AdjointExternalPressureGradientTerm(AdjointBCMixin, ShallowWaterContinuity
 
 
 class AdjointHUDivMomentumTerm(AdjointBCMixin, ShallowWaterMomentumTerm):
-    raise NotImplementedError  # TODO
+    r"""
+    Term resulting from differentiating the :math:`\nabla\cdot(H\mathbf u)` term with respect to
+    velocity. Note that, where the original term appeared in the continuity equation of the forward
+    model, this term appears in the momentum equation of the adjoint model.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+
+        zeta_by_parts = self.eta_is_dg
+
+        f = 0
+        n = self.normal
+        if zeta_by_parts:
+            f += -zeta*div(total_h*self.u_test)*self.dx
+            h_av = avg(total_h)
+            zeta_star = avg(zeta) + sqrt(g_grav/h_av)*jump(z, n)
+            f += h_av*zeta_star*jump(self.u_test, n)*dS
+            for bnd_marker in self.boundary_markers:
+                funcs = bnd_conditions.get(bnd_marker)
+                ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+                if funcs is not None:
+                    zeta_ext, z_ext = self.get_bnd_functions(zeta, z, bnd_marker, bnd_conditions)
+
+                    # Compute linear riemann solution with zeta, zeta_ext, z, z_ext
+                    zn_jump = inner(z - z_ext, n)
+                    zeta_rie = 0.5*(zeta + zeta_ext) + sqrt(g_grav/total_h)*zn_jump
+                    f += total_h*zeta_rie*dot(self.z_test, n)*ds_bnd
+        else:
+            f += total_h*inner(grad(zeta), self.z_test)*self.dx
+            for bnd_marker in self.boundary_markers:
+                funcs = bnd_conditions.get(bnd_marker)
+                ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+                if funcs is not None:
+                    zeta_ext, z_ext = self.get_bnd_functions(zeta, z, bnd_marker, bnd_conditions)
+
+                    # Compute linear riemann solution with zeta, zeta_ext, z, z_ext
+                    zn_jump = inner(z - z_ext, n)
+                    zeta_rie = 0.5*(zeta + zeta_ext) + sqrt(g_grav/total_h)*zn_jump
+                    f += total_h*(zeta_rie-zeta)*dot(self.u_test, n)*ds_bnd
+        return -f
 
 
 class AdjointHUDivContinuityTerm(AdjointBCMixin, HUDivTerm):
