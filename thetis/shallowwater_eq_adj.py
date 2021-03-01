@@ -226,6 +226,7 @@ class AdjointWindStressTerm(ShallowWaterContinuityTerm):
     def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
         wind_stress = fields_old.get('wind_stress')
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
         f = 0
         if wind_stress is not None:
             f += -self.eta_test*dot(wind_stress, z)/total_h**2/rho_0*self.dx
@@ -308,7 +309,21 @@ class AdjointQuadraticDragContinuityTerm(ShallowWaterContinuityTerm):
 
 
 class AdjointBottomDrag3DTerm(ShallowWaterContinuityTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the bottom drag term with respect to elevation.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        total_h = self.depth.get_total_depth(self.options.get('elev_2d'))
+        # TODO: Account for wetting and drying
+        bottom_drag = fields_old.get('bottom_drag')
+        uv_bottom = fields_old.get('uv_bottom')
+        f = 0
+        if bottom_drag is not None and uv_bottom is not None:
+            uvb_mag = sqrt(uv_bottom[0]**2 + uv_bottom[1]**2)
+            stress = bottom_drag*uvb_mag*uv_bottom/total_h
+            bot_friction = -self.eta_test*dot(stress/total_h, z)*self.dx
+            f += bot_friction
+        return -f
 
 
 class AdjointTurbineDragMomentumTerm(ShallowWaterMomentumTerm):
