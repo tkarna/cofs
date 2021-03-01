@@ -113,9 +113,9 @@ class AdjointHUDivMomentumTerm(AdjointBCMixin, ShallowWaterMomentumTerm):
                     # Compute linear riemann solution with zeta, zeta_ext, z, z_ext
                     zn_jump = inner(z - z_ext, n)
                     zeta_rie = 0.5*(zeta + zeta_ext) + sqrt(g_grav/total_h)*zn_jump
-                    f += total_h*zeta_rie*dot(self.z_test, n)*ds_bnd
+                    f += total_h*zeta_rie*dot(self.u_test, n)*ds_bnd
         else:
-            f += total_h*inner(grad(zeta), self.z_test)*self.dx
+            f += total_h*inner(grad(zeta), self.u_test)*self.dx
             for bnd_marker in self.boundary_markers:
                 funcs = bnd_conditions.get(bnd_marker)
                 ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
@@ -130,7 +130,45 @@ class AdjointHUDivMomentumTerm(AdjointBCMixin, ShallowWaterMomentumTerm):
 
 
 class AdjointHUDivContinuityTerm(AdjointBCMixin, HUDivTerm):
-    raise NotImplementedError  # TODO
+    r"""
+    Term resulting from differentiating the :math:`\nabla\cdot(H\mathbf u)` term with respect to
+    elevation.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        if not self.options.use_nonlinear_equations:
+            return 0
+
+        zeta_by_parts = self.eta_is_dg
+
+        # Account for wetting and drying
+        test = self.eta_test
+        if self.options.get('use_wetting_and_drying'):
+            test = test*self.depth.heaviside_approx(self.options.get('elev_2d'))
+
+        f = 0
+        uv = fields.get('uv_2d')
+        n = self.normal
+        if zeta_by_parts:
+            f += -zeta*div(test*uv)*self.dx
+            f += inner(jump(self.eta_test, n), avg(zeta)*avg(uv))*self.dS
+            for bnd_marker in self.boundary_markers:
+                funcs = bnd_conditions.get(bnd_marker)
+                ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+                if funcs is not None:
+                    zeta_ext, z_ext = self.get_bnd_functions(zeta, z, bnd_marker, bnd_conditions)
+                    zeta_ext_old, z_ext_old = self.get_bnd_functions(zeta_old, z_old, bnd_marker, bnd_conditions)
+
+                    # Compute linear riemann solution with zeta, zeta_ext, z, z_ext
+                    zn_jump = inner(z_old - z_ext_old, n)
+                    zeta_rie = 0.5*(zeta_old + zeta_ext_old) + sqrt(h_av/g_grav)*zn_jump
+                    f += zeta_rie*dot(uv, self.normal)*self.eta_test*ds_bnd
+        else:
+            f += inner(grad(zeta), test*uv)*self.dx
+            for bnd_marker in self.boundary_markers:
+                funcs = bnd_conditions.get(bnd_marker)
+                ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+                if funcs is not None and 'elev' not in funcs:
+                    f += -zeta*dot(uv, self.normal)*test*ds_bnd
 
 
 class AdjointHorizontalAdvectionTerm(AdjointBCMixin, HorizontalAdvectionTerm):
