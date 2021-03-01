@@ -5,6 +5,7 @@ from .utility import *
 
 
 g_grav = physical_constants['g_grav']
+rho_0 = physical_constants['rho0']
 
 
 class AdjointBCMixin:
@@ -219,7 +220,16 @@ class AdjointLinearDragTerm(LinearDragTerm):
 
 
 class AdjointWindStressTerm(ShallowWaterContinuityTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the wind stress term by elevation.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        wind_stress = fields_old.get('wind_stress')
+        total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        f = 0
+        if wind_stress is not None:
+            f += -self.eta_test*dot(wind_stress, z)/total_h**2/rho_0*self.dx
+        return f
 
 
 class AdjointQuadraticDragMomentumTerm(ShallowWaterMomentumTerm):
