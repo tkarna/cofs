@@ -346,7 +346,25 @@ class AdjointTurbineDragMomentumTerm(ShallowWaterMomentumTerm):
 
 
 class AdjointTurbineDragContinuityTerm(ShallowWaterContinuityTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the turbine drag term with respect to elevation.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        if not self.options.use_nonlinear_equations:
+            return 0
+
+        total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
+        uv = fields.get('uv_2d')
+        f = 0
+        for subdomain_id, farm_options in self.options.tidal_turbine_farms.items():
+            density = farm_options.turbine_density
+            C_T = farm_options.turbine_options.thrust_coefficient
+            A_T = pi * (farm_options.turbine_options.diameter/2.)**2
+            C_D = (C_T * A_T * density)/2.
+            unorm = sqrt(dot(uv_old, uv_old))
+            f += C_D*unorm*inner(z, uv)*self.eta_test/total_h**2*self.dx
+        return -f
 
 
 class AdjointMomentumSourceTerm(MomentumSourceTerm):
