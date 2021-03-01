@@ -47,7 +47,43 @@ class AdjointBCMixin:
 
 
 class AdjointExternalPressureGradientTerm(AdjointBCMixin, ShallowWaterContinuityTerm):
-    raise NotImplementedError  # TODO
+    r"""
+    Term resulting from differentiating the external pressure gradient term with respect
+    to elevation.
+
+    Where the original term appeared in the momentum equation of the forward model, this
+    term appears in the continuity equation of the adjoint model.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+
+        z_by_parts = self.u_continuity in ['dg', 'hdiv']
+
+        n = self.normal
+        if z_by_parts:
+            f = -g_grav*inner(grad(self.eta_test), z)*self.dx
+            if self.eta_is_dg:
+                h_av = avg(total_h)
+                z_star = avg(z) + sqrt(h_av/g_grav)*jump(zeta, n)
+                f += g_grav*inner(jump(self.eta_test, n), z_star)*dS
+            for bnd_marker in self.boundary_markers:
+                funcs = bnd_conditions.get(bnd_marker)
+                ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+                zeta_ext, z_ext = self.get_bnd_functions(zeta, z, bnd_marker, bnd_conditions)
+
+                # Compute linear Riemann solution with zeta, zeta_ext, z, z_ext
+                zeta_jump = zeta - zeta_ext
+                zn_rie = 0.5*inner(z + z_ext, n) + sqrt(total_h/g_grav)*zeta_jump
+                f += g_grav*self.eta_test*zn_rie*ds_bnd
+        else:
+            f = g_grav*self.eta_test*div(z)*self.dx
+            for bnd_marker in self.boundary_markers:
+                funcs = bnd_conditions.get(bnd_marker)
+                ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
+                if funcs is not None and 'elev' not in funcs:
+                    f += -g_grav*dot(z, self.normal)*self.eta_test*ds_bnd
+
+        return -f
 
 
 class AdjointHUDivMomentumTerm(AdjointBCMixin, ShallowWaterMomentumTerm):
