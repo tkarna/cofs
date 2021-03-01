@@ -9,22 +9,27 @@ rho_0 = physical_constants['rho0']
 
 
 class AdjointBCMixin:
-    # TODO: doc
+    """
+    Mixin which updates the :attr:`get_bnd_functions` method for adjoint :class:`ShallowWaterTerm`s.
 
+    BCs in the adjoint may be interpreted in either the discrete adjoint or continuous adjoint sense.
+    The former case simply homogenises all of the original BCs, whereas the latter derives new ones
+    using a Lagrange multiplier method.
+    """
     def get_bnd_functions(self, zeta_in, z_in, bnd_id, bnd_conditions):
-        homogeneous = False
+        homogeneous = False  # TODO: Create an option for this
         funcs = bnd_conditions.get(bnd_id)
-        if funcs is not None and 'elev' not in funcs and 'un' not in funcs:
-            raise Exception('Unsupported bnd type: {:}'.format(funcs.keys()))
+        if 'flux' in funcs:
+            raise NotImplementedError("Flux BCs have not been considered for adjoint shallow water.")
 
         if homogeneous:
-            if 'elev' in funcs and 'un' in funcs:
+            if 'elev' in funcs and ('un' in funcs or 'uv' in funcs):
                 zeta_ext = Constant(0.0)
                 z_ext = Constant(0.0)*self.normal
             elif 'elev' in funcs:
                 zeta_ext = Constant(0.0)
                 z_ext = z_in  # assume symmetry
-            elif 'un' in funcs:
+            elif ('un' in funcs or 'uv' in funcs):
                 zeta_ext = zeta_in  # assume symmetry
                 z_ext = Constant(0.0)*self.normal
             else:
@@ -57,6 +62,7 @@ class AdjointExternalPressureGradientTerm(AdjointBCMixin, ShallowWaterContinuity
     """
     def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
 
         z_by_parts = self.u_continuity in ['dg', 'hdiv']
 
@@ -95,6 +101,7 @@ class AdjointHUDivMomentumTerm(AdjointBCMixin, ShallowWaterMomentumTerm):
     """
     def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
 
         zeta_by_parts = self.eta_is_dg
 
@@ -141,17 +148,14 @@ class AdjointHUDivContinuityTerm(AdjointBCMixin, HUDivTerm):
 
         zeta_by_parts = self.eta_is_dg
 
-        # Account for wetting and drying
-        test = self.eta_test
-        if self.options.get('use_wetting_and_drying'):
-            test = test*self.depth.heaviside_approx(self.options.get('elev_2d'))
+        # TODO: Account for wetting and drying
 
         f = 0
         uv = fields.get('uv_2d')
         n = self.normal
         if zeta_by_parts:
-            f += -zeta*div(test*uv)*self.dx
-            f += inner(jump(self.eta_test, n), avg(zeta)*avg(uv))*self.dS
+            f += zeta*div(self.eta_test*uv)*self.dx
+            f += -inner(jump(self.eta_test, n), avg(zeta)*avg(uv))*self.dS
             for bnd_marker in self.boundary_markers:
                 funcs = bnd_conditions.get(bnd_marker)
                 ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
@@ -162,14 +166,14 @@ class AdjointHUDivContinuityTerm(AdjointBCMixin, HUDivTerm):
                     # Compute linear riemann solution with zeta, zeta_ext, z, z_ext
                     zn_jump = inner(z_old - z_ext_old, n)
                     zeta_rie = 0.5*(zeta_old + zeta_ext_old) + sqrt(h_av/g_grav)*zn_jump
-                    f += zeta_rie*dot(uv, self.normal)*self.eta_test*ds_bnd
+                    f += -zeta_rie*dot(uv, self.normal)*self.eta_test*ds_bnd
         else:
-            f += inner(grad(zeta), test*uv)*self.dx
+            f += -inner(grad(zeta), self.eta_test*uv)*self.dx
             for bnd_marker in self.boundary_markers:
                 funcs = bnd_conditions.get(bnd_marker)
                 ds_bnd = ds(int(bnd_marker), degree=self.quad_degree)
                 if funcs is not None and 'elev' not in funcs:
-                    f += -zeta*dot(uv, self.normal)*test*ds_bnd
+                    f += zeta*dot(uv, self.normal)*test*ds_bnd
 
 
 class AdjointHorizontalAdvectionTerm(AdjointBCMixin, HorizontalAdvectionTerm):
@@ -182,27 +186,23 @@ class AdjointHorizontalAdvectionTerm(AdjointBCMixin, HorizontalAdvectionTerm):
 
         horiz_advection_by_parts = True
 
-        uv = fields.get('uv_2d')
-        un = 0.5*(abs(dot(uv, self.normal)) - dot(uv, self.normal))  # u.n if u.n < 0 else 0
-        downwind = lambda x: conditional(un < 0, dot(x, self.normal), 0)
-
         f = 0
         f += -inner(dot(self.u_test, nabla_grad(uv)), z)*self.dx
         f += -inner(dot(uv, nabla_grad(self.u_test)), z)*self.dx
         if horiz_advection_by_parts:
-            f += inner(jump(self.u_test), 2*avg(un*z))*self.dS
-            f += inner(2*avg(downwind(self.u_test)*z), jump(uv))*self.dS
-            # TODO: Boundary contributions?
+            # TODO: Flux terms?
             # TODO: Stabilisation?
-
-        return -f
+            return -f
 
 
 class AdjointHorizontalViscosityTerm(AdjointBCMixin, HorizontalViscosityTerm):
     """
     Viscosity is identical to that in the forward model.
     """
-    pass
+    def residual(self, *args, **kwargs):
+        if self.options.use_grad_depth_viscosity_term or self.options.use_grad_div_viscosity_term:
+            raise NotImplementedError  # TODO
+        return super(AdjointHorizontalViscosityTerm).residual(*args, **kwargs)
 
 
 class AdjointCoriolisTerm(CoriolisTerm):
@@ -242,6 +242,7 @@ class AdjointQuadraticDragMomentumTerm(ShallowWaterMomentumTerm):
             return 0
 
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
         uv = fields.get('uv_2d')
         manning_drag_coefficient = fields_old.get('manning_drag_coefficient')
         nikuradse_bed_roughness = fields_old.get('nikuradse_bed_roughness')
@@ -262,8 +263,8 @@ class AdjointQuadraticDragMomentumTerm(ShallowWaterMomentumTerm):
             return -f
 
         unorm = sqrt(dot(uv, uv) + self.options.norm_smoother**2)
-        f += -C_D*unorm*inner(self.u_test, z)/total_h*self.dx
-        f += -C_D*inner(self.u_test, uv)*inner(z, uv)/unorm/total_h*self.dx
+        f += C_D*unorm*inner(self.u_test, z)/total_h*self.dx
+        f += C_D*inner(self.u_test, uv)*inner(z, uv)/unorm/total_h*self.dx
         return -f
 
 
@@ -276,6 +277,7 @@ class AdjointQuadraticDragContinuityTerm(ShallowWaterContinuityTerm):
             return 0
 
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
         uv = fields.get('uv_2d')
         manning_drag_coefficient = fields_old.get('manning_drag_coefficient')
         nikuradse_bed_roughness = fields_old.get('nikuradse_bed_roughness')
@@ -295,12 +297,8 @@ class AdjointQuadraticDragContinuityTerm(ShallowWaterContinuityTerm):
         if C_D is None:
             return -f
 
-        # Account for wetting and drying
-        if self.options.get('use_wetting_and_drying'):
-            C_D = C_D*self.depth.heaviside_approx(self.options.get('elev_2d'))
-
         unorm = sqrt(dot(uv, uv) + self.options.norm_smoother**2)
-        f += C_D*unorm*inner(z, uv)*self.eta_test/total_h**2*self.dx
+        f += -C_D*unorm*inner(z, uv)*self.eta_test/total_h**2*self.dx
         return -f
 
 
@@ -317,7 +315,7 @@ class AdjointBottomDrag3DTerm(ShallowWaterContinuityTerm):
         if bottom_drag is not None and uv_bottom is not None:
             uvb_mag = sqrt(uv_bottom[0]**2 + uv_bottom[1]**2)
             stress = bottom_drag*uvb_mag*uv_bottom/total_h
-            bot_friction = -self.eta_test*dot(stress/total_h, z)*self.dx
+            bot_friction = self.eta_test*dot(stress/total_h, z)*self.dx
             f += bot_friction
         return -f
 
@@ -340,8 +338,8 @@ class AdjointTurbineDragMomentumTerm(ShallowWaterMomentumTerm):
             A_T = pi * (farm_options.turbine_options.diameter/2.)**2
             C_D = (C_T * A_T * density)/2.
             unorm = sqrt(dot(uv_old, uv_old))
-            f += -C_D*unorm*inner(self.u_test, z)/total_h*self.dx
-            f += -C_D*inner(self.u_test, uv)*inner(z, uv)/unorm/total_h*self.dx
+            f += C_D*unorm*inner(self.u_test, z)/total_h*self.dx
+            f += C_D*inner(self.u_test, uv)*inner(z, uv)/unorm/total_h*self.dx
         return -f
 
 
@@ -363,7 +361,7 @@ class AdjointTurbineDragContinuityTerm(ShallowWaterContinuityTerm):
             A_T = pi * (farm_options.turbine_options.diameter/2.)**2
             C_D = (C_T * A_T * density)/2.
             unorm = sqrt(dot(uv_old, uv_old))
-            f += C_D*unorm*inner(z, uv)*self.eta_test/total_h**2*self.dx
+            f += -C_D*unorm*inner(z, uv)*self.eta_test/total_h**2*self.dx
         return -f
 
 
@@ -396,7 +394,10 @@ class AdjointContinuitySourceTerm(ContinuitySourceTerm):
 
 
 class AdjointBathymetryDisplacementMassTerm(BathymetryDisplacementMassTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the bathymetry displacement term with respect to elevation.
+    """
+    raise NotImplementedError  # TODO: Account for wetting and drying
 
 
 class BaseAdjointShallowWaterEquation(BaseShallowWaterEquation):
