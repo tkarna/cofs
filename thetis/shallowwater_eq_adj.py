@@ -242,6 +242,7 @@ class AdjointQuadraticDragMomentumTerm(ShallowWaterMomentumTerm):
             return 0
 
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        uv = fields.get('uv_2d')
         manning_drag_coefficient = fields_old.get('manning_drag_coefficient')
         nikuradse_bed_roughness = fields_old.get('nikuradse_bed_roughness')
         C_D = fields_old.get('quadratic_drag_coefficient')
@@ -259,13 +260,10 @@ class AdjointQuadraticDragMomentumTerm(ShallowWaterMomentumTerm):
             C_D = conditional(total_h > nikuradse_bed_roughness, 2*(kappa**2)/(ln(11.036*total_h/nikuradse_bed_roughness)**2), Constant(0.0))
         if C_D is None:
             return -f
-        uv = fields.get('uv_2d')
-        if uv is None:
-            raise Exception('Adjoint equation does not have access to forward solution velocity')
 
         unorm = sqrt(dot(uv, uv) + self.options.norm_smoother**2)
-        f += -C_D*unorm*inner(self.u_test, z)*self.dx
-        f += -C_D*inner(self.u_test, uv)*inner(z, uv)/unorm*self.dx
+        f += -C_D*unorm*inner(self.u_test, z)/total_h*self.dx
+        f += -C_D*inner(self.u_test, uv)*inner(z, uv)/unorm/total_h*self.dx
         return -f
 
 
@@ -278,6 +276,7 @@ class AdjointQuadraticDragContinuityTerm(ShallowWaterContinuityTerm):
             return 0
 
         total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        uv = fields.get('uv_2d')
         manning_drag_coefficient = fields_old.get('manning_drag_coefficient')
         nikuradse_bed_roughness = fields_old.get('nikuradse_bed_roughness')
         C_D = fields_old.get('quadratic_drag_coefficient')
@@ -295,9 +294,6 @@ class AdjointQuadraticDragContinuityTerm(ShallowWaterContinuityTerm):
             C_D = conditional(total_h > nikuradse_bed_roughness, 2*(kappa**2)/(ln(11.036*total_h/nikuradse_bed_roughness)**2), Constant(0.0))
         if C_D is None:
             return -f
-        uv = fields.get('uv_2d')
-        if uv is None:
-            raise Exception('Adjoint equation does not have access to forward solution velocity')
 
         # Account for wetting and drying
         if self.options.get('use_wetting_and_drying'):
@@ -327,7 +323,26 @@ class AdjointBottomDrag3DTerm(ShallowWaterContinuityTerm):
 
 
 class AdjointTurbineDragMomentumTerm(ShallowWaterMomentumTerm):
-    raise NotImplementedError  # TODO
+    """
+    Term resulting from differentiating the turbine drag term with respect to velocity.
+    """
+    def residual(self, z, zeta, z_old, zeta_old, fields, fields_old, bnd_conditions=None):
+        if not self.options.use_nonlinear_equations:
+            return 0
+
+        total_h = self.depth.get_total_depth(fields.get('elev_2d'))
+        # TODO: Account for wetting and drying
+        uv = fields.get('uv_2d')
+        f = 0
+        for subdomain_id, farm_options in self.options.tidal_turbine_farms.items():
+            density = farm_options.turbine_density
+            C_T = farm_options.turbine_options.thrust_coefficient
+            A_T = pi * (farm_options.turbine_options.diameter/2.)**2
+            C_D = (C_T * A_T * density)/2.
+            unorm = sqrt(dot(uv_old, uv_old))
+            f += -C_D*unorm*inner(self.u_test, z)/total_h*self.dx
+            f += -C_D*inner(self.u_test, uv)*inner(z, uv)/unorm/total_h*self.dx
+        return -f
 
 
 class AdjointTurbineDragContinuityTerm(ShallowWaterContinuityTerm):
