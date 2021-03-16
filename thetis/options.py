@@ -366,9 +366,37 @@ class TidalTurbineFarmOptions(FrozenHasTraits, TraitType):
         0.0, help='Average power production per turbine required to break even')
 
 
+@attach_paired_options("free_surface_timestepper_type",
+                       PairedEnum([('SSPRK33', ExplicitTimestepperOptions2d),
+                                   ('ForwardEuler', ExplicitTimestepperOptions2d),
+                                   ('BackwardEuler', SemiImplicitTimestepperOptions2d),
+                                   ('CrankNicolson', CrankNicolsonTimestepperOptions2d),
+                                   ('DIRK22', SemiImplicitTimestepperOptions2d),
+                                   ('DIRK33', SemiImplicitTimestepperOptions2d),
+                                   ],
+                                  "free_surface_timestepper_options",
+                                  default_value='CrankNicolson',
+                                  help='Name of the free surface time integrator').tag(config=True),
+                       Instance(TimeStepperOptions, args=()).tag(config=True))
+class NonhydrostaticModelOptions(FrozenHasTraits):
+    """Options for non-hydrostatic models"""
+    name = 'Non-hydrostatic 2D/3D models'
+    solve_nonhydrostatic_pressure = Bool(False, help='Solve equations with the non-hydrostatic pressure').tag(config=True)
+    q_degree = NonNegativeInteger(
+        None, allow_none=True, help="Polynomial degree of the non-hydrostatic pressure space").tag(config=True)
+    update_free_surface = Bool(True, help='Update free surface elevation after pressure projection/correction step').tag(config=True)
+    solver_parameters = PETScSolverParameters({
+        'snes_type': 'ksponly',
+        'ksp_type': 'preonly',
+        'mat_type': 'aij',
+        'pc_type': 'lu',
+    }).tag(config=True)
+
+
 class CommonModelOptions(FrozenConfigurable):
     """Options that are common for both 2d and 3d models"""
     name = 'Model options'
+    nh_model_options = Instance(NonhydrostaticModelOptions, args=()).tag(config=True)
     polynomial_degree = NonNegativeInteger(1, help='Polynomial degree of elements').tag(config=True)
     element_family = Enum(
         ['dg-dg', 'rt-dg', 'bdm-dg', 'dg-cg'],

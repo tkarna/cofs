@@ -1938,3 +1938,110 @@ class DepthExpression:
         else:
             total_h = self.bathymetry_2d
         return total_h
+
+
+class DepthIntegratedPoissonSolver(object):
+    r"""
+    Construct solvers for Poisson equation and updating velocities
+
+    Poisson equation is related to 2d NH SWE system
+
+    Non-hydrostatic pressure :math:`q` is obtained from the generic form of equation
+
+    .. math::
+        \nabla \cdot \nabla q^{n+1/2} + A \cdot \nabla q^{n+1/2} + B q^{n+1/2} + C = 0
+
+    The parameter terms A, B and C are defined as
+
+    .. math::
+        A = \frac{\nabla (\eta^* - d)}{H^*}
+        B = \nabla A - \frac{4}{(H^*)^2}
+        C = -2 \frac{\rho_0}{\Delta t} ( \nabla \cdot \bar{\textbf{u}}^* + 2 \frac{\bar{w} - w_b}{H^*} )
+
+    where the :math:`H = \eta + d` denotes the water depth
+    and the superscript star symbol represents the intermediate level of terms.
+    """
+    def __init__(self, q_2d, uv_2d, w_2d, elev_2d, depth, dt, bnd_functions=None, solver_parameters=None):
+        if solver_parameters is None:
+            solver_parameters = {'snes_type': 'ksponly',
+                                 'ksp_type': 'preonly',
+                                 'mat_type': 'aij',
+                                 'pc_type': 'lu'}
+        rho_0 = physical_constants['rho0']
+        self.q_2d = q_2d
+        self.uv_2d = uv_2d
+        self.w_2d = w_2d
+        self.elev_2d = elev_2d
+        self.depth = depth
+        self.dt = dt
+        self.bnd_functions = bnd_functions
+
+        fs_q = self.q_2d.function_space()
+        test_q = TestFunction(fs_q)
+        normal = FacetNormal(fs_q.mesh())
+        boundary_markers = fs_q.mesh().exterior_facets.unique_markers
+
+        bath_2d = self.depth.bathymetry_2d
+        h_star = self.depth.get_total_depth(self.elev_2d)
+        w_b = -dot(self.uv_2d, grad(bath_2d))  # TODO account for bed movement
+
+        # weak form of `div(grad(q^{n+1/2}))`
+        f = -dot(grad(self.q_2d), grad(test_q))*dx
+        # weak form of `dot(grad(self.elev_2d - bath_2d)/h_star, grad(q^{n+1/2}))`
+        grad_hori = grad(self.elev_2d - bath_2d)
+        f += dot(grad_hori/h_star, grad(self.q_2d))*test_q*dx
+        # weak form of `q^{n+1/2}*div(grad(self.elev_2d - bath_2d))/h_star`
+        f += -dot(grad(self.q_2d*test_q/h_star), grad_hori)*dx
+        # weak form of `-q^{n+1/2}*(dot(grad(self.elev_2d - bath_2d), grad(h_star)) + 4)/h_star**2`
+        f += -(dot(grad_hori, grad(h_star)) + 4.)/h_star**2*self.q_2d*test_q*dx
+        # weak form of `-2.*rho_0/self.dt*(div(self.uv_2d) + (self.w_2d - w_b)/(0.5*h_star))`
+        const = 2.*rho_0/self.dt
+        f += const*(dot(grad(test_q), self.uv_2d)*dx - 2.*(self.w_2d - w_b)/h_star*test_q*dx)
+
+        # boundary conditions
+        bcs = []
+        for bnd_marker in boundary_markers:
+            func = self.bnd_functions['shallow_water'].get(bnd_marker)
+            ds_bnd = ds(int(bnd_marker))
+            if func is not None:  # e.g. inlet flow, TODO be more precise
+                q_is_dg = element_continuity(fs_q.ufl_element()).horizontal == 'dg'
+                if q_is_dg:
+                    bnd_method = "geometric"
+                else:
+                    bnd_method = "topological"
+                bc = DirichletBC(fs_q, 0., int(bnd_marker), method=bnd_method)
+                bcs.append(bc)
+                f += self.q_2d*test_q/h_star*dot(grad_hori, normal)*ds_bnd
+                f += -const*dot(self.uv_2d, normal)*test_q*ds_bnd
+
+        prob_q = NonlinearVariationalProblem(f, self.q_2d)
+        self.solver_q = NonlinearVariationalSolver(
+            prob_q,
+            solver_parameters=solver_parameters,
+            options_prefix='poisson_solver'
+        )
+        # horizontal velocity updater
+        fs_u = self.uv_2d.function_space()
+        tri_u = TrialFunction(fs_u)
+        test_u = TestFunction(fs_u)
+        a_u = inner(tri_u, test_u)*dx
+        l_u = dot(self.uv_2d - 0.5*self.dt/rho_0*(grad(self.q_2d) + grad_hori/h_star*self.q_2d), test_u)*dx
+        prob_u = LinearVariationalProblem(a_u, l_u, self.uv_2d)
+        self.solver_u = LinearVariationalSolver(prob_u)
+        # vertical velocity updater
+        fs_w = self.w_2d.function_space()
+        tri_w = TrialFunction(fs_w)
+        test_w = TestFunction(fs_w)
+        a_w = inner(tri_w, test_w)*dx
+        l_w = dot(self.w_2d + self.dt/rho_0*(self.q_2d/h_star), test_w)*dx
+        prob_w = LinearVariationalProblem(a_w, l_w, self.w_2d)
+        self.solver_w = LinearVariationalSolver(prob_w)
+
+    def solve(self, solve_w=True):
+        # solve non-hydrostatic pressure q
+        self.solver_q.solve()
+        # update horizontal velocity uv_2d
+        self.solver_u.solve()
+        # update vertical velocity w_2d
+        if solve_w:
+            self.solver_w.solve()

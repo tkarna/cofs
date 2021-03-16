@@ -414,10 +414,10 @@ class PressureProjectionPicard(TimeIntegrator):
         for k in sorted(self.fields_old):
             self.fields_old[k].assign(self.fields[k])
 
-    def advance(self, t, updateForcings=None):
+    def advance(self, t, update_forcings=None):
         """Advances equations for one time step."""
-        if updateForcings is not None:
-            updateForcings(t + self.dt)
+        if update_forcings is not None:
+            update_forcings(t + self.dt)
         self.solution_old.assign(self.solution)
 
         for it in range(self.iterations):

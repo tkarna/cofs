@@ -930,8 +930,8 @@ class FreeSurfaceEquation(BaseShallowWaterEquation):
             eta_test, eta_space, u_space, depth, options)
 
     def mass_term(self, solution):
-        f = super(ShallowWaterEquations, self).mass_term(solution)
-        f += -self.bathymetry_displacement_mass_term.residual(solution)
+        f = super(FreeSurfaceEquation, self).mass_term(solution)
+        f += -self.bathymetry_displacement_mass_term.residual([0, solution])  # expects [uv, eta] but uv is not used
         return f
 
     def residual(self, label, solution, solution_old, fields, fields_old, bnd_conditions):
