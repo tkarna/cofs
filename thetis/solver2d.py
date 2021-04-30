@@ -323,13 +323,12 @@ class FlowSolver2d(FrozenClass):
         self.eq_sw.bnd_functions = self.bnd_functions['shallow_water']
         if self.options.solve_tracer:
             self.fields.tracer_2d = Function(self.function_spaces.Q_2d, name='tracer_2d')
+            uv_2d, elev_2d = self.fields.solution_2d.split()
+            args = (self.function_spaces.Q_2d, self.depth, self.options, uv_2d)
             if self.options.use_tracer_conservative_form:
-                self.eq_tracer = conservative_tracer_eq_2d.ConservativeTracerEquation2D(
-                    self.function_spaces.Q_2d, self.depth, self.options)
+                self.eq_tracer = conservative_tracer_eq_2d.ConservativeTracerEquation2D(*args)
             else:
-                uv_2d, elev_2d = self.fields.solution_2d.split()
-                self.eq_tracer = tracer_eq_2d.TracerEquation2D(
-                    self.function_spaces.Q_2d, self.depth, self.options, uv_2d)
+                self.eq_tracer = tracer_eq_2d.TracerEquation2D(*args)
             if self.options.use_limiter_for_tracers and self.options.polynomial_degree > 0:
                 self.tracer_limiter = limiter.VertexBasedP1DGLimiter(self.function_spaces.Q_2d)
             else:
