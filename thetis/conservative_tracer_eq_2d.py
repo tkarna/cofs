@@ -15,11 +15,14 @@ velocities, and
 """
 from __future__ import absolute_import
 from .utility import *
-from .equation import Equation
-from .tracer_eq_2d import HorizontalDiffusionTerm, TracerTerm
+from .tracer_eq_2d import HorizontalDiffusionTerm, TracerTerm, TracerEquation2D
 
 __all__ = [
     'ConservativeTracerEquation2D',
+    'ConservativeTracerTerm',
+    'ConservativeHorizontalAdvectionTerm',
+    'ConservativeHorizontalDiffusionTerm',
+    'ConservativeSourceTerm',
 ]
 
 
@@ -162,18 +165,11 @@ class ConservativeSourceTerm(ConservativeTracerTerm):
         return -f
 
 
-class ConservativeTracerEquation2D(Equation):
+class ConservativeTracerEquation2D(TracerEquation2D):
     """
     2D tracer advection-diffusion equation :eq:`tracer_eq` in conservative form
     """
-    def __init__(self, function_space, depth, options):
-        """
-        :arg function_space: :class:`FunctionSpace` where the solution belongs
-        :arg depth: :class: `DepthExpression` containing depth info
-        :arg options: :class`ModelOptions2d` containing parameters
-        """
-        super(ConservativeTracerEquation2D, self).__init__(function_space)
-        args = (function_space, depth, options)
-        self.add_term(ConservativeHorizontalAdvectionTerm(*args), 'explicit')
-        self.add_term(ConservativeHorizontalDiffusionTerm(*args), 'explicit')
-        self.add_term(ConservativeSourceTerm(*args), 'source')
+    def add_terms(self, *args, **kwargs):
+        self.add_term(ConservativeHorizontalAdvectionTerm(*args, **kwargs), 'explicit')
+        self.add_term(ConservativeHorizontalDiffusionTerm(*args, **kwargs), 'explicit')
+        self.add_term(ConservativeSourceTerm(*args, **kwargs), 'source')
