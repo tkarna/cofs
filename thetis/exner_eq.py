@@ -117,9 +117,12 @@ class ExnerBedloadTerm(ExnerTerm):
             keys = [*bnd_conditions[bnd_marker].keys()]
             values = [*bnd_conditions[bnd_marker].values()]
             for i in range(len(keys)):
-                if keys[i] != 'elev' and all(j == 0.0 for j in [float(j) for j in values[i]]):
-                    no_contr = True
-
+                if keys[i] not in ('elev', 'uv'):
+                    if float(values[i]) == 0.0:
+                        no_contr = True
+                elif keys[i] == 'uv':
+                    if all(j == 0.0 for j in [float(j) for j in values[i]]):
+                        no_contr = True
             if not no_contr:
                 f += -self.test*(fac*qbx*self.n[0] + fac*qby*self.n[1])*self.ds(bnd_marker)
 
