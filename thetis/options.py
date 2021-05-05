@@ -670,6 +670,28 @@ class ModelOptions2d(CommonModelOptions):
     use_supg_tracer = Bool(
         False, help="Use SUPG stabilisation in tracer advection").tag(config=True)
 
+    def __init__(self, *args, **kwargs):
+        self.tracer_data_2d = {}
+        super(ModelOptions2d).__init__(*args, **kwargs)
+
+    def add_tracer_2d(self, name, filename, shortname=None, unit='-', source=None):
+        """
+        Define a 2D tracer field
+
+        :arg name: name for the tracer field
+        :arg filename: file name for outputs
+        :kwarg shortname: short version of name
+        :kwarg unit: units for field
+        :kwarg source: associated source term
+        """
+        self.tracer_data_2d[filename] = {
+            'name': name,
+            'shortname': shortname or name,
+            'unit': unit,
+            'filename': filename,
+            'source': source,  # TODO: Validate input
+        }
+
 
 @attach_paired_options("timestepper_type",
                        PairedEnum([('LeapFrog', ExplicitTimestepperOptions3d),

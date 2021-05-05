@@ -52,7 +52,10 @@ class CoupledTimeIntegrator2D(timeintegrator.TimeIntegratorBase):
         """
         self.timesteppers.swe2d = self.solver.get_swe_timestepper(self.swe_integrator)
         if self.solver.options.solve_tracer:
-            self.timesteppers.tracer = self.solver.get_tracer_timestepper(self.tracer_integrator)
+            for label in self.options.tracer_data_2d:
+                self.timesteppers[label] = self.solver.get_tracer_timestepper(self.tracer_integrator, label)
+            if 'tracer_2d' in self.options.tracer_data_2d:
+                self.timesteppers.tracer = self.timesteppers.tracer_2d  # Backwards compatibility
         if self.solver.options.sediment_model_options.solve_suspended_sediment:
             self.timesteppers.sediment = self.solver.get_sediment_timestepper(self.sediment_integrator)
         if self.solver.options.sediment_model_options.solve_exner:
@@ -80,7 +83,8 @@ class CoupledTimeIntegrator2D(timeintegrator.TimeIntegratorBase):
 
         self.timesteppers.swe2d.initialize(self.fields.solution_2d)
         if self.options.solve_tracer:
-            self.timesteppers.tracer.initialize(self.fields.tracer_2d)
+            for label in self.options.tracer_data_2d:
+                self.timesteppers[label].initialize(self.fields[label])
         if self.options.sediment_model_options.solve_suspended_sediment:
             self.timesteppers.sediment.initialize(self.fields.sediment_2d)
         if self.options.sediment_model_options.solve_exner:
@@ -92,9 +96,11 @@ class CoupledTimeIntegrator2D(timeintegrator.TimeIntegratorBase):
         if not self.options.tracer_only:
             self.timesteppers.swe2d.advance(t, update_forcings=update_forcings)
         if self.options.solve_tracer:
-            self.timesteppers.tracer.advance(t, update_forcings=update_forcings)
+            for label in self.options.tracer_data_2d:
+                self.timesteppers[label].advance(t, update_forcings=update_forcings)
             if self.options.use_limiter_for_tracers:
-                self.solver.tracer_limiter.apply(self.fields.tracer_2d)
+                for label in self.options.tracer_data_2d:
+                    self.solver.tracer_limiter.apply(self.fields[label])
         if self.solver.sediment_model is not None:
             self.solver.sediment_model.update()
         if self.options.sediment_model_options.solve_suspended_sediment:

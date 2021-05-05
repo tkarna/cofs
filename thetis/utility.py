@@ -1932,14 +1932,26 @@ class DepthExpression:
     Construct expression for depth depending on options
 
     If `not use_nonlinear_equations`, then the depth is simply the bathymetry:
-        :math:`H = h`
+
+  ..math::
+        H = h
+
     Otherwise we include the free surface elevation:
-        :math:`H = h + \eta`
+
+  ..math::
+        H = h + \eta
+
     and if `use_wetting_and_drying`, includes a bathymetry displacement term
     to ensure a positive depth (see Karna et al. 2011):
-        :math:`H = h + f(h+\eta) + \eta`
+
+  ..math::
+        H = h + f(h+\eta) + \eta
+
     where
-        :math:`f(h+\eta) = (\sqrt{(h+\eta)^2 +\alpha^2} - (h+\eta))/2`
+
+  ..math::
+        f(h+\eta) = (\sqrt{(h+\eta)^2 +\alpha^2} - (h+\eta))/2
+
     This introduces a wetting-drying parameter :math:`\alpha`, with dimensions
     of length. The value for :math:`\alpha` is specified by
     :attr:`.ModelOptions.wetting_and_drying_alpha`, in units of meters. The

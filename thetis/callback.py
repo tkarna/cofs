@@ -554,7 +554,7 @@ class AccumulatorCallback(DiagnosticCallback):
         """
         :arg scalar_callback: Python function that returns a list of values of an objective functional.
         :arg solver_obj: Thetis solver object
-        :arg **kwargs: any additional keyword arguments, see DiagnosticCallback
+        :arg kwargs: any additional keyword arguments, see DiagnosticCallback
         """
         kwargs.setdefault('export_to_hdf5', False)
         kwargs.setdefault('append_to_log', False)

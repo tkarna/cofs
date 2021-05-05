@@ -108,7 +108,7 @@ class SedimentDepositionTerm(SedimentTerm):
 
 class SedimentEquation2D(Equation):
     """
-    2D sediment advection-diffusion equation: :eq:`tracer_eq_2d` or :eq:`conservative_tracer_eq_2d`
+    2D sediment advection-diffusion equation: :eq:`tracer_eq_2d` or :eq:`cons_tracer_eq_2d`
     with sediment source and sink term
     """
     def __init__(self, function_space, depth, options, sediment_model, conservative=False):
