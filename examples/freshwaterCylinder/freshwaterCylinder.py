@@ -170,7 +170,9 @@ reynolds_number = 75.
 viscosity = 'const'
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 1*t_export
+    t_export = 10 * dt
+    t_end = t_export
+    layers = 3
 
 temp_const = 10.0
 salt_center = 33.75

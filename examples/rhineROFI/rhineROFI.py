@@ -64,6 +64,11 @@ reso = 'coarse'
 layers = 12
 if reso == 'fine':
     layers = 30  # NOTE 40 in [2]
+
+if os.getenv('THETIS_REGRESSION_TEST') is not None:
+    reso = 'test'
+    layers = 2
+
 outputdir = 'outputs_{:}'.format(reso)
 mesh2d = Mesh('mesh_rhineRofi_{:}.msh'.format(reso))
 print_output('Loaded mesh ' + mesh2d.name)
@@ -97,7 +102,8 @@ t_end = 34*Ttide
 t_export = Ttide/40  # approx 18.6 min
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 1*t_export
+    t_export = 10 * dt
+    t_end = t_export
 
 # bathymetry
 P1_2d = get_functionspace(mesh2d, 'CG', 1)

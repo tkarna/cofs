@@ -82,7 +82,9 @@ def run_problem(reso_dx=10.0, poly_order=1, element_family='dg-dg',
     t_export = 3*3600.
 
     if os.getenv('THETIS_REGRESSION_TEST') is not None:
-        t_end = 1*t_export
+        t_export = 900.
+        t_end = t_export
+        nlayers = 4
 
     reso_str = 'dx' + str(np.round(delta_x/1000., decimals=1))
     reso_str += '_nz' + str(nlayers)

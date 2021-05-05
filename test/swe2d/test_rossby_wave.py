@@ -15,7 +15,6 @@ compute the error metrics, we project onto the same high resolution mesh used fo
 (2008), Journal of Geophysical Research: Oceans, 113(C7).
 """
 from thetis import *
-import numpy as np
 import pytest
 
 
@@ -208,18 +207,24 @@ def run(refinement_level, **model_options):
 
 
 def run_convergence(ref_list, **options):
-    """Runs test for a list of refinements and computes error convergence rate."""
+    """
+    Runs test for a sequence of refinements and computes the metric
+    convergence rate.
+
+    Note that the metrics should tend to unity, rather than zero. Since
+    this could be from above or from below, we assess the quantity
+
+  ..math::
+        1 - |1 - m|,
+
+    where :math:`m` is the metric. This quantity has its maximum at unity,
+    so must approach from below.
+    """
     setup_name = 'rossby-soliton'
-    stepper = options.get('timestepper_type')
 
     # Compute metrics for each refinement level
     labels = ('h+', 'h-', 'c+', 'c-')
-    metrics = {
-        'dx': [24/r for r in ref_list],
-        'dt': [0.96/r for r in ref_list] if stepper == 'SSPRK33' else [9.6/r for r in ref_list],
-    }
-    for metric in labels:
-        metrics[metric] = []
+    metrics = {metric: [] for metric in labels}
     for r in ref_list:
         msg = "Error metrics:"
         for metric, value in zip(labels, run(r, **options)):
@@ -228,10 +233,10 @@ def run_convergence(ref_list, **options):
         print_output(msg)
 
     # Check convergence of relative mean peak height and phase speed
-    rtol = 0.01
+    rtol = 0.02
     for m in ('h+', 'h-', 'c+', 'c-'):
         for i in range(1, len(ref_list)):
-            slope = metrics[m][i]/metrics[m][i-1]
+            slope = (1 - abs(1 - metrics[m][i]))/(1 - abs(1 - metrics[m][i-1]))
             msg = "{:s}: Divergence of error metric {:s}, expected {:.4f} > 1"
             assert slope > 1.0 - rtol, msg.format(setup_name, m, slope)
             print_output("{:s}: error metric {:s} index {:d} PASSED".format(setup_name, m, i))
@@ -255,3 +260,11 @@ def test_convergence(stepper, family):
     run_convergence([24, 48], timestepper_type=stepper,
                     simulation_end_time=30.0, polynomial_degree=1, element_family=family,
                     no_exports=True, expansion_order=1)
+
+
+# ---------------------------
+# run individual setup for debugging
+# ---------------------------
+
+if __name__ == '__main__':
+    test_convergence('DIRK22', 'bdm-dg')

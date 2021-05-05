@@ -316,14 +316,9 @@ def setup(request):
     return request.param
 
 
-@pytest.fixture(params=[True, False])
-def auto_sipg(request):
-    return request.param
-
-
-def test_convergence(setup, timestepper_type, auto_sipg):
-    run_convergence(setup, [1, 2, 3], 1, save_plot=False, timestepper_type=timestepper_type,
-                    use_automatic_sipg_parameter=auto_sipg)
+def test_convergence(setup, timestepper_type):
+    run_convergence(setup, [1, 2, 3], 1, save_plot=False,
+                    timestepper_type=timestepper_type)
 
 
 if __name__ == '__main__':

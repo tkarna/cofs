@@ -499,8 +499,7 @@ class HorizontalViscosityTerm(ShallowWaterMomentumTerm):
         - \int_\Gamma \text{avg}(\nu_h)\big(\text{jump}(\bar{\textbf{u}} \textbf{n}) + \text{jump}(\bar{\textbf{u}} \textbf{n})^T\big) \cdot \text{avg}(\nabla \boldsymbol{\psi}) dS \\
         &+ \int_\Gamma \sigma \text{avg}(\nu_h) \big(\text{jump}(\bar{\textbf{u}} \textbf{n}) + \text{jump}(\bar{\textbf{u}} \textbf{n})^T\big) \cdot \text{jump}(\boldsymbol{\psi} \textbf{n}) dS
 
-    where :math:`\sigma` is a penalty parameter,
-    see Epshteyn and Riviere (2007).
+    where :math:`\sigma` is a penalty parameter, see Hillewaert (2013).
 
     If option :attr:`.ModelOptions.use_grad_div_viscosity_term` is ``False``,
     we use viscous stress :math:`\boldsymbol{\tau}_\nu = \nu_h \nabla \bar{\textbf{u}}`.
@@ -521,19 +520,20 @@ class HorizontalViscosityTerm(ShallowWaterMomentumTerm):
 
     as a source term.
 
-    Epshteyn and Riviere (2007). Estimation of penalty parameters for symmetric
-    interior penalty Galerkin methods. Journal of Computational and Applied
-    Mathematics, 206(2):843-872. http://dx.doi.org/10.1016/j.cam.2006.08.029
+    Hillewaert, Koen (2013). Development of the discontinuous Galerkin method
+    for high-resolution, large scale CFD and acoustics in industrial
+    geometries. PhD Thesis. Université catholique de Louvain.
+    https://dial.uclouvain.be/pr/boreal/object/boreal:128254/
     """
     def residual(self, uv, eta, uv_old, eta_old, fields, fields_old, bnd_conditions=None):
         total_h = self.depth.get_total_depth(eta_old)
 
         nu = fields_old.get('viscosity_h')
+        sipg_factor = self.options.sipg_factor
         if nu is None:
             return 0
 
         n = self.normal
-        h = self.cellsize
 
         if self.options.use_grad_div_viscosity_term:
             stress = nu*2.*sym(grad(uv))
@@ -545,10 +545,17 @@ class HorizontalViscosityTerm(ShallowWaterMomentumTerm):
         f = inner(grad(self.u_test), stress)*self.dx
 
         if self.u_continuity in ['dg', 'hdiv']:
-            alpha = self.options.sipg_parameter
-            assert alpha is not None
+            cell = self.mesh.ufl_cell()
+            p = self.function_space.ufl_element().degree()
+            cp = (p + 1) * (p + 2) / 2 if cell == triangle else (p + 1)**2
+            l_normal = CellVolume(self.mesh) / FacetArea(self.mesh)
+            # by default the factor is multiplied by 2 to ensure convergence
+            sigma = sipg_factor * cp / l_normal
+            sp = sigma('+')
+            sm = sigma('-')
+            sigma_max = conditional(sp > sm, sp, sm)
             f += (
-                + avg(alpha/h)*inner(tensor_jump(self.u_test, n), stress_jump)*self.dS
+                + sigma_max*inner(tensor_jump(self.u_test, n), stress_jump)*self.dS
                 - inner(avg(grad(self.u_test)), stress_jump)*self.dS
                 - inner(tensor_jump(self.u_test, n), avg(stress))*self.dS
             )
@@ -572,7 +579,7 @@ class HorizontalViscosityTerm(ShallowWaterMomentumTerm):
                         stress_jump = nu*outer(delta_uv, n)
 
                     f += (
-                        alpha/h*inner(outer(self.u_test, n), stress_jump)*ds_bnd
+                        sigma*inner(outer(self.u_test, n), stress_jump)*ds_bnd
                         - inner(grad(self.u_test), stress_jump)*ds_bnd
                         - inner(outer(self.u_test, n), stress)*ds_bnd
                     )

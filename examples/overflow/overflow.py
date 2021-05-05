@@ -39,7 +39,9 @@ Re_h = 10.0
 outputdir = 'outputs_' + reso_str + '_Re' + str(int(Re_h))
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 1*t_export
+    t_export = dt
+    t_end = t_export
+    layers = 3
 
 # bathymetry
 P1_2d = get_functionspace(mesh2d, 'CG', 1)

@@ -55,7 +55,7 @@ t_export = 100.0
 t_end = 10*T_cycle + 1e-3
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 5*t_export
+    t_end = t_export
 
 # create solver
 solver_obj = solver.FlowSolver(mesh2d, bathymetry_2d, n_layers)

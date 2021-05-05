@@ -8,9 +8,8 @@ Note this is not the main run-file and is just used to create an initial checkpo
 the morphodynamic simulation.
 
 For more details of the test case set-up see
-[1] Clare et al. 2020. “Hydro-morphodynamics 2D Modelling Using a Discontinuous
-    Galerkin Discretisation.” EarthArXiv. January 9. doi:10.31223/osf.io/tpqvy.
-
+[1] Clare et al. (2020). Hydro-morphodynamics 2D modelling using a discontinuous Galerkin discretisation.
+    Computers & Geosciences, 104658. https://doi.org/10.1016/j.cageo.2020.104658
 """
 
 from thetis import *

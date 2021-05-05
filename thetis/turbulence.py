@@ -753,7 +753,7 @@ class GLSVerticalDiffusionTerm(VerticalDiffusionTerm):
     """
     def __init__(self, function_space, schmidt_nb,
                  bathymetry=None, v_elem_size=None, h_elem_size=None,
-                 sipg_parameter=Constant(1.0)):
+                 sipg_factor=Constant(1.0)):
         """
         :arg function_space: :class:`FunctionSpace` where the solution belongs
         :arg schmidt_nb: the Schmidt number of TKE or Psi
@@ -763,10 +763,12 @@ class GLSVerticalDiffusionTerm(VerticalDiffusionTerm):
             element size
         :kwarg h_elem_size: scalar :class:`Function` that defines the horizontal
             element size
+        :kwarg sipg_factor: :class: `Constant` or :class: `Function` vertical SIPG penalty scaling factor
+
         """
         super(GLSVerticalDiffusionTerm, self).__init__(function_space,
                                                        bathymetry, v_elem_size, h_elem_size,
-                                                       sipg_parameter_vertical=sipg_parameter)
+                                                       sipg_factor_vertical=sipg_factor)
         self.schmidt_nb = schmidt_nb
 
     def residual(self, solution, solution_old, fields, fields_old, bnd_conditions=None):

@@ -9,13 +9,7 @@ def element_family(request):
     return request.param
 
 
-@pytest.fixture(params=[True, False])
-def automatic_sipg(request):
-    return request.param
-
-
-def test_steady_state_channel_mms(element_family, automatic_sipg,
-                                  do_exports=False):
+def test_steady_state_channel_mms(element_family, do_exports=False):
     lx = 5e3
     ly = 1e3
 
@@ -57,7 +51,6 @@ def test_steady_state_channel_mms(element_family, automatic_sipg,
         # --- create solver ---
         solver_obj = solver2d.FlowSolver2d(mesh2d, bathymetry_2d)
         solver_obj.options.element_family = element_family
-        solver_obj.options.use_automatic_sipg_parameter = automatic_sipg
         solver_obj.options.polynomial_degree = order
         solver_obj.options.use_nonlinear_equations = True
         solver_obj.options.quadratic_drag_coefficient = Constant(C_D)

@@ -145,7 +145,7 @@ def run(refinement, **model_options):
     return l2_err
 
 
-def run_convergence(ref_list, saveplot=False, **options):
+def run_convergence(ref_list, expected_rate=None, saveplot=False, **options):
     """Runs test for a list of refinements and computes error convergence rate"""
     polynomial_degree = options.get('polynomial_degree', 1)
     space_str = options.get('element_family')
@@ -157,7 +157,6 @@ def run_convergence(ref_list, saveplot=False, **options):
     setup_name = 'v-viscosity'
 
     def check_convergence(x_log, y_log, expected_slope, field_str, saveplot):
-        slope_rtol = 0.05
         slope, intercept, r_value, p_value, std_err = stats.linregress(x_log, y_log)
         if saveplot:
             import matplotlib.pyplot as plt
@@ -188,41 +187,44 @@ def run_convergence(ref_list, saveplot=False, **options):
             plt.savefig(imgfile, dpi=200, bbox_inches='tight')
         if expected_slope is not None:
             err_msg = '{:}: Wrong convergence rate {:.4f}, expected {:.4f}'.format(setup_name, slope, expected_slope)
-            assert slope > expected_slope*(1 - slope_rtol), err_msg
+            assert slope > expected_slope, err_msg
             print_output('{:}: convergence rate {:.4f} PASSED'.format(setup_name, slope))
         else:
             print_output('{:}: {:} convergence rate {:.4f}'.format(setup_name, field_str, slope))
         return slope
 
-    check_convergence(x_log, y_log, polynomial_degree+1, 'uv', saveplot)
+    if expected_rate is None:
+        expected_rate = polynomial_degree+1
+    check_convergence(x_log, y_log, expected_rate, 'uv', saveplot)
 
 # ---------------------------
 # standard tests for pytest
 # ---------------------------
 
 
-@pytest.fixture(params=['rt-dg', 'dg-dg', 'bdm-dg'])
-def element_family(request):
-    return request.param
-
-
-@pytest.fixture(params=[0, 1], ids=['polynomial_degree-0', 'polynomial_degree-1'])
-def polynomial_degree(request):
-    return request.param
-
-
-@pytest.fixture(params=[True, False], ids=['implicit', 'explicit'])
-def implicit(request):
-    return request.param
-
-
-@pytest.mark.parametrize(('stepper', 'use_ale'),
-                         [('LeapFrog', True),
-                          ('SSPRK22', True)])
-def test_vertical_viscosity(polynomial_degree, implicit, element_family, stepper, use_ale):
-    run_convergence([1, 2, 3], polynomial_degree=polynomial_degree, implicit=implicit,
-                    element_family=element_family,
-                    timestepper_type=stepper, use_ale_moving_mesh=use_ale)
+@pytest.mark.parametrize(
+    ('stepper', 'family', 'polynomial_degree', 'implicit', 'expected_rate'),
+    [
+        ('SSPRK22', 'dg-dg', 0, False, 1.0),
+        ('SSPRK22', 'dg-dg', 1, False, 1.7),
+        ('SSPRK22', 'dg-dg', 0, True, 1.0),
+        ('SSPRK22', 'dg-dg', 1, True, 2.1),
+        ('SSPRK22', 'rt-dg', 0, False, 1.0),
+        ('SSPRK22', 'rt-dg', 1, False, 1.7),
+        ('SSPRK22', 'rt-dg', 0, True, 1.0),
+        ('SSPRK22', 'rt-dg', 1, True, 2.1),
+        ('SSPRK22', 'bdm-dg', 0, False, 1.0),
+        ('SSPRK22', 'bdm-dg', 1, False, 1.7),
+        ('SSPRK22', 'bdm-dg', 0, True, 1.0),
+        ('SSPRK22', 'bdm-dg', 1, True, 2.1),
+    ]
+)
+def test_vertical_viscosity(polynomial_degree, implicit, family, stepper,
+                            expected_rate):
+    run_convergence([1, 2, 3], expected_rate=expected_rate,
+                    polynomial_degree=polynomial_degree,
+                    implicit=implicit, element_family=family,
+                    timestepper_type=stepper)
 
 # ---------------------------
 # run individual setup for debugging

@@ -1271,54 +1271,92 @@ def get_cell_widths_2d(mesh2d):
                   widths[0] = fmax(widths[0], fabs(coords[2*i] - coords[(2*i+2)%6]));
                   widths[1] = fmax(widths[1], fabs(coords[2*i+1] - coords[(2*i+3)%6]));
                 }""", dx, {'coords': (mesh2d.coordinates, READ), 'widths': (cell_widths, RW)})
-    assert cell_widths.vector().gather().min() >= 0.0  # TODO: TEMPORARY
     return cell_widths
 
 
-def get_sipg_ratio(nu):
+def anisotropic_cell_size(mesh):
     """
-    Compute the ratio between the maximum of `nu` and the minimum of `nu` in each element. If `nu`
-    is P0 or a `Constant` then the resulting ratio is unity in each element. If `nu` varies linearly
-    in each element then the ratios are outputted as a P0 field.
-    """
-    if isinstance(nu, Constant):
-        # return nu
-        return Constant(1.0)
-    else:
-        try:
-            assert isinstance(nu, Function)
-        except AssertionError:
-            raise ValueError("Viscosity and diffusivity should be either a `Constant` or `Function`.")
-    el = nu.ufl_element()
+    Measure of cell size for anisotropic meshes, as described in
+    Micheletti et al. (2003).
 
-    if el.degree() == 0:
-        # return nu
-        return Constant(1.0)
-    elif el.degree() == 1 and el.family() in ('Lagrange', 'Discontinuous Lagrange', 'CG', 'DG'):
-        fs = nu.function_space()
-        if el.cell() not in (ufl.triangle, ufl.tetrahedron) and el.variant() != 'equispaced':
-            fs = FunctionSpace(fs.mesh(), ufl.FiniteElement(el.family(), el.cell(), el.degree, variant='equispaced'))
-            tmp = Function(fs).interpolate(nu)
-        else:
-            tmp = nu.copy()
-        P0 = FunctionSpace(fs.mesh(), "DG", 0)
-        nu_max = Function(P0)
-        nu_min = Function(P0)
-        nu_max.assign(np.finfo(0.).min)
-        nu_min.assign(np.finfo(0.).max)
-        par_loop("""for (int i=0; i<nu.dofs; i++) {
-                      nu_max[0] = fmax(nu[i], nu_max[0]);
-                      nu_min[0] = fmin(nu[i], nu_min[0]);
-                    }""",
-                 dx, {'nu_max': (nu_max, RW), 'nu_min': (nu_min, RW), 'nu': (tmp, READ)})
-        # nu_max *= nu_max
-        nu_max /= nu_min
-        return nu_max
-    else:
-        raise NotImplementedError("Currently only implemented for `Constant`s and DG0, DG1 and CG1 spaces.")
-        # TODO: For higher order elements, the extrema aren't necessarily achieved at the
-        #       vertices. Perhaps we could project or interpolate into a matching Bernstein
-        #       element and use the property that the Bernstein polynomials bound the solution.
+    This is used in the SUPG formulation for the 2D tracer model.
+
+    Micheletti, Perotto and Picasso (2003). Stabilized finite
+    elements on anisotropic meshes: a priori error estimates for
+    the advection-diffusion and the Stokes problems. SIAM Journal
+    on Numerical Analysis 41.3: 1131-1162.
+    """
+    try:
+        from firedrake.slate.slac.compiler import PETSC_ARCH
+    except ImportError:
+        PETSC_ARCH = os.path.join(os.environ.get('PETSC_DIR'), os.environ.get('PETSC_ARCH'))
+    include_dir = ["%s/include/eigen3" % PETSC_ARCH]
+
+    # Compute cell Jacobian
+    P0_ten = TensorFunctionSpace(mesh, "DG", 0)
+    J = Function(P0_ten, name="Cell Jacobian")
+    J.interpolate(Jacobian(mesh))
+
+    # Get SPD part of polar decomposition
+    B = Function(P0_ten, name="SPD part")
+    kernel_str = """
+#include <Eigen/Dense>
+
+using namespace Eigen;
+
+void poldec_spd(double A_[4], const double * B_) {
+
+  // Map inputs and outputs onto Eigen objects
+  Map<Matrix<double, 2, 2, RowMajor> > A((double *)A_);
+  Map<Matrix<double, 2, 2, RowMajor> > B((double *)B_);
+
+  // Compute singular value decomposition
+  JacobiSVD<Matrix<double, 2, 2, RowMajor> > svd(B, ComputeFullV);
+
+  // Get SPD part of polar decomposition
+  A += svd.matrixV() * svd.singularValues().asDiagonal() * svd.matrixV().transpose();
+}"""
+    kernel = op2.Kernel(kernel_str, 'poldec_spd', cpp=True, include_dirs=include_dir)
+    op2.par_loop(kernel, P0_ten.node_set, B.dat(op2.RW), J.dat(op2.READ))
+
+    # Get eigendecomposition with eigenvalues decreasing in magnitude
+    P0_vec = VectorFunctionSpace(mesh, "DG", 0)
+    evalues = Function(P0_vec, name="Eigenvalues")
+    evectors = Function(P0_ten, name="Eigenvectors")
+    kernel_str = """
+#include <Eigen/Dense>
+
+using namespace Eigen;
+
+void reordered_eigendecomposition(double EVecs_[4], double EVals_[2], const double * M_) {
+
+  // Map inputs and outputs onto Eigen objects
+  Map<Matrix<double, 2, 2, RowMajor> > EVecs((double *)EVecs_);
+  Map<Vector2d> EVals((double *)EVals_);
+  Map<Matrix<double, 2, 2, RowMajor> > M((double *)M_);
+
+  // Solve eigenvalue problem
+  SelfAdjointEigenSolver<Matrix<double, 2, 2, RowMajor>> eigensolver(M);
+  Matrix<double, 2, 2, RowMajor> Q = eigensolver.eigenvectors();
+  Vector2d D = eigensolver.eigenvalues();
+
+  // Reorder eigenpairs by magnitude of eigenvalue
+  if (fabs(D(0)) > fabs(D(1))) {
+    EVecs = Q;
+    EVals = D;
+  } else {
+    EVecs(0,0) = Q(0,1);EVecs(0,1) = Q(0,0);
+    EVecs(1,0) = Q(1,1);EVecs(1,1) = Q(1,0);
+    EVals(0) = D(1);
+    EVals(1) = D(0);
+  }
+}
+"""
+    kernel = op2.Kernel(kernel_str, 'reordered_eigendecomposition', cpp=True, include_dirs=include_dir)
+    op2.par_loop(kernel, P0_ten.node_set, evectors.dat(op2.RW), evalues.dat(op2.RW), B.dat(op2.READ))
+
+    # Return minimum eigenvalue
+    return interpolate(evalues[-1], FunctionSpace(mesh, "DG", 0))
 
 
 class ALEMeshUpdater(object):

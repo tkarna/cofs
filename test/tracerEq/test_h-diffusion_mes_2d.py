@@ -104,7 +104,7 @@ def run(refinement, **model_options):
     return l2_err
 
 
-def run_convergence(ref_list, saveplot=False, **options):
+def run_convergence(ref_list, expected_rate=None, saveplot=False, **options):
     """Runs test for a list of refinements and computes error convergence rate"""
     polynomial_degree = options.get('polynomial_degree', 1)
     l2_err = []
@@ -115,7 +115,6 @@ def run_convergence(ref_list, saveplot=False, **options):
     setup_name = 'h-diffusion'
 
     def check_convergence(x_log, y_log, expected_slope, field_str, saveplot):
-        slope_rtol = 0.20
         slope, intercept, r_value, p_value, std_err = stats.linregress(x_log, y_log)
         if saveplot:
             import matplotlib.pyplot as plt
@@ -139,8 +138,6 @@ def run_convergence(ref_list, saveplot=False, **options):
             ref_str = 'ref-' + '-'.join([str(r) for r in ref_list])
             degree_str = 'o{:}'.format(polynomial_degree)
             imgfile = '_'.join(['convergence', setup_name, field_str, ref_str, degree_str])
-            if options.get('use_automatic_sipg_parameter', False):
-                imgfile = '_'.join([imgfile, 'sipg_auto'])
             imgfile += '.png'
             imgdir = create_directory('plots')
             imgfile = os.path.join(imgdir, imgfile)
@@ -148,33 +145,35 @@ def run_convergence(ref_list, saveplot=False, **options):
             plt.savefig(imgfile, dpi=200, bbox_inches='tight')
         if expected_slope is not None:
             err_msg = '{:}: Wrong convergence rate {:.4f}, expected {:.4f}'.format(setup_name, slope, expected_slope)
-            assert slope > expected_slope*(1 - slope_rtol), err_msg
+            assert slope > expected_slope, err_msg
             print_output('{:}: convergence rate {:.4f} PASSED'.format(setup_name, slope))
         else:
             print_output('{:}: {:} convergence rate {:.4f}'.format(setup_name, field_str, slope))
         return slope
 
-    check_convergence(x_log, y_log, polynomial_degree+1, 'tracer', saveplot)
+    if expected_rate is None:
+        expected_rate = polynomial_degree+1
+    check_convergence(x_log, y_log, expected_rate, 'tracer', saveplot)
 
 # ---------------------------
 # standard tests for pytest
 # ---------------------------
 
 
-@pytest.fixture(params=[True, False])
-def auto_sipg(request):
-    return request.param
-
-
-@pytest.fixture(params=['CrankNicolson', 'SSPRK33', 'ForwardEuler', 'BackwardEuler', 'DIRK22', 'DIRK33'])
-def stepper(request):
-    return request.param
-
-
-def test_horizontal_diffusion(auto_sipg, stepper):
-    run_convergence([1, 2, 3], polynomial_degree=1,
-                    timestepper_type=stepper,
-                    use_automatic_sipg_parameter=auto_sipg,
+@pytest.mark.parametrize(
+    ('stepper', 'polynomial_degree', 'expected_rate'),
+    [
+        ('CrankNicolson', 1, 1.8),
+        ('SSPRK33', 1, 1.8),
+        ('ForwardEuler', 1, 1.8),
+        ('BackwardEuler', 1, 1.8),
+        ('DIRK22', 1, 1.8),
+        ('DIRK33', 1, 1.8),
+    ]
+)
+def test_horizontal_diffusion(polynomial_degree, stepper, expected_rate):
+    run_convergence([1, 2, 3], polynomial_degree=polynomial_degree,
+                    timestepper_type=stepper, expected_rate=expected_rate,
                     )
 
 # ---------------------------
@@ -185,4 +184,5 @@ def test_horizontal_diffusion(auto_sipg, stepper):
 if __name__ == '__main__':
     run_convergence([1, 2, 4, 6, 8], polynomial_degree=1,
                     timestepper_type='CrankNicolson',
+                    expected_rate=1.8,
                     no_exports=False, saveplot=True)

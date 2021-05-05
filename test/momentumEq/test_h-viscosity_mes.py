@@ -186,8 +186,8 @@ def run_convergence(ref_list, expected_rate=None, saveplot=False, **options):
 @pytest.mark.parametrize(
     ('stepper', 'family', 'polynomial_degree', 'warped', 'expected_rate'),
     [
-        ('SSPRK22', 'dg-dg', 1, False, 1.6),
-        ('SSPRK22', 'dg-dg', 1, True, 1.6),
+        ('SSPRK22', 'dg-dg', 1, False, 1.55),
+        ('SSPRK22', 'dg-dg', 1, True, 1.55),
         ('SSPRK22', 'rt-dg', 1, False, 1.7),
         ('SSPRK22', 'rt-dg', 1, True, 1.7),
         ('SSPRK22', 'bdm-dg', 1, False, 1.9),
@@ -212,4 +212,5 @@ if __name__ == '__main__':
                     warped_mesh=True,
                     element_family='dg-dg',
                     timestepper_type='SSPRK22',
+                    expected_rate=1.55,
                     no_exports=False, saveplot=True)

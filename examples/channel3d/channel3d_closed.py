@@ -28,7 +28,8 @@ t_end = 6 * 3600
 t_export = 900.0
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 5*t_export
+    t_export = 900.
+    t_end = t_export
 
 # bathymetry
 P1_2d = get_functionspace(mesh2d, 'CG', 1)

@@ -120,6 +120,7 @@ class SedimentModel(object):
 
         ksp = Function(self.P1_2d).interpolate(3*self.average_size)
         self.a = Function(self.P1_2d).interpolate(self.bed_reference_height/2)
+
         if self.options.sediment_model_options.morphological_viscosity is None:
             self.viscosity = self.options.horizontal_viscosity
         else:
@@ -148,10 +149,10 @@ class SedimentModel(object):
 
         # calculate settling velocity
         self.settling_velocity = Function(self.P1_2d).interpolate(conditional(self.average_size <= 1e-04,
-                                                            self.g*(self.average_size**2)*self.R/(18*self.viscosity),
-                                                            conditional(self.average_size <= 1e-03, (10*self.viscosity/self.average_size)
-                                                                        * (sqrt(1 + 0.01*((self.R*self.g*(self.average_size**3))
-                                                                           / (self.viscosity**2)))-1), 1.1*sqrt(self.g*self.average_size*self.R))))
+                                                                              self.g*(self.average_size**2)*self.R/(18*self.viscosity),
+                                                                              conditional(self.average_size <= 1e-03, (10*self.viscosity/self.average_size)
+                                                                                          * (sqrt(1 + 0.01*((self.R*self.g*(self.average_size**3))
+                                                                                             / (self.viscosity**2)))-1), 1.1*sqrt(self.g*self.average_size*self.R))))
 
         # first step: project velocity to CG
         self.uv_cg = Function(self.P1v_2d).project(self.uv)

@@ -52,7 +52,9 @@ def fourier_series_solution(mesh, lx, diff_flux, **model_options):
         return assemble(2/lx*source*phi(n)*dx)
 
     def source_term(n):
-        """Simple quadrature is used to approximate time integral."""
+        """
+        A simple quadrature routine is used to approximate the time integral.
+        """
         I = 0
         tau = 0
         dt = 0.05
@@ -116,9 +118,12 @@ def run(refinement, **model_options):
     options.solve_tracer = True
     options.tracer_only = True
     options.horizontal_diffusivity = nu
-    options.use_limiter_for_tracers = True
+    options.horizontal_diffusivity_scale = nu
+    options.horizontal_velocity_scale = Constant(0.0)
     options.fields_to_export = ['tracer_2d']
     options.update(model_options)
+    options.use_limiter_for_tracers = options.tracer_element_family == 'dg'
+    options.use_supg_tracer = options.tracer_element_family == 'cg'
     options.simulation_end_time = t_end - 0.5*dt
 
     # Boundary conditions
@@ -149,6 +154,11 @@ def run_convergence(**model_options):
     assert slope > 2, msg.format(slope)
 
 
+@pytest.fixture(params=['dg', 'cg'])
+def family(request):
+    return request.param
+
+
 @pytest.fixture(params=[1])
 def polynomial_degree(request):
     return request.param
@@ -161,14 +171,16 @@ def stepper(request):
 
 @pytest.mark.parametrize(('diffusivity'),
                          [(Constant(0.1))])
-def test_horizontal_advection(polynomial_degree, stepper, diffusivity):
+def test_horizontal_advection(polynomial_degree, stepper, diffusivity, family):
     run_convergence(polynomial_degree=polynomial_degree,
                     timestepper_type=stepper,
-                    horizontal_diffusivity=diffusivity)
+                    horizontal_diffusivity=diffusivity,
+                    tracer_element_family=family)
 
 
 if __name__ == '__main__':
     run_convergence(polynomial_degree=1,
                     timestepper_type='CrankNicolson',
                     horizontal_diffusivity=Constant(0.1),
+                    tracer_element_family='cg',
                     no_exports=False)

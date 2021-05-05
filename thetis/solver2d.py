@@ -195,66 +195,6 @@ class FlowSolver2d(FrozenClass):
             print_output('dt = {:}'.format(self.dt))
             sys.stdout.flush()
 
-    def set_sipg_parameter(self):
-        r"""
-        Compute a penalty parameter which ensures stability of the Interior Penalty method
-        used for viscosity and diffusivity terms, from Epshteyn et al. 2007
-        (http://dx.doi.org/10.1016/j.cam.2006.08.029).
-
-        The scheme is stable if
-
-        ..math::
-            \alpha|_K > 3*X*p*(p+1)*\cot(\theta_K),
-
-        for all elements :math:`K`, where
-
-        ..math::
-            X = \frac{\max_{x\in K}(\nu(x))}{\min_{x\in K}(\nu(x))},
-
-        :math:`p` the degree, and :math:`\theta_K` is the minimum angle in the element.
-        """
-        degree = self.function_spaces.U_2d.ufl_element().degree()
-        alpha = Constant(5.0*degree*(degree+1) if degree != 0 else 1.5)
-        degree_tracer = self.function_spaces.Q_2d.ufl_element().degree()
-        alpha_tracer = Constant(5.0*degree_tracer*(degree_tracer+1) if degree_tracer != 0 else 1.5)
-
-        if self.options.use_automatic_sipg_parameter:
-            P0 = self.function_spaces.P0_2d
-            theta = get_minimum_angles_2d(self.mesh2d)
-            min_angle = theta.vector().gather().min()
-            print_output("Minimum angle in mesh: {:.2f} degrees".format(np.rad2deg(min_angle)))
-            cot_theta = 1.0/tan(theta)
-
-            # Penalty parameter for shallow water
-            if not self.options.tracer_only:
-                nu = self.options.horizontal_viscosity
-                if nu is not None:
-                    alpha = alpha*get_sipg_ratio(nu)*cot_theta
-                    self.options.sipg_parameter = interpolate(alpha, P0)
-                    max_sipg = self.options.sipg_parameter.vector().gather().max()
-                    print_output("Maximum SIPG value:        {:.2f}".format(max_sipg))
-                else:
-                    print_output("Using default SIPG parameter for shallow water equations")
-
-            # Penalty parameter for tracers
-            if self.options.solve_tracer or self.options.sediment_model_options.solve_suspended_sediment:
-                if self.options.solve_tracer:
-                    tracer_kind = 'tracer'
-                elif self.options.sediment_model_options.solve_suspended_sediment:
-                    tracer_kind = 'sediment'
-                nu = self.options.horizontal_diffusivity
-                if nu is not None:
-                    alpha_tracer = alpha_tracer*get_sipg_ratio(nu)*cot_theta
-                    self.options.sipg_parameter_tracer = interpolate(alpha_tracer, P0)
-                    max_sipg = self.options.sipg_parameter_tracer.vector().gather().max()
-                    print_output("Maximum {} SIPG value: {:.2f}".format(tracer_kind, max_sipg))
-                else:
-                    print_output("Using default SIPG parameter for {} equation".format(tracer_kind))
-        else:
-            print_output("Using default SIPG parameters")
-            self.options.sipg_parameter.assign(alpha)
-            self.options.sipg_parameter_tracer.assign(alpha_tracer)
-
     def set_wetting_and_drying_alpha(self):
         r"""
         Compute a wetting and drying parameter :math:`\alpha` which ensures positive water
@@ -323,11 +263,12 @@ class FlowSolver2d(FrozenClass):
                 'Spherical mesh requires \'rt-dg\' or \'bdm-dg\' ' \
                 'element family.'
         # ----- function spaces: elev in H, uv in U, mixed is W
-        self.function_spaces.P0_2d = get_functionspace(self.mesh2d, 'DG', 0, name='P0_2d')
+        DG = 'DG' if self.mesh2d.ufl_cell().cellname() == 'triangle' else 'DQ'
+        self.function_spaces.P0_2d = get_functionspace(self.mesh2d, DG, 0, name='P0_2d')
         self.function_spaces.P1_2d = get_functionspace(self.mesh2d, 'CG', 1, name='P1_2d')
         self.function_spaces.P1v_2d = VectorFunctionSpace(self.mesh2d, 'CG', 1, name='P1v_2d')
-        self.function_spaces.P1DG_2d = get_functionspace(self.mesh2d, 'DG', 1, name='P1DG_2d')
-        self.function_spaces.P1DGv_2d = VectorFunctionSpace(self.mesh2d, 'DG', 1, name='P1DGv_2d')
+        self.function_spaces.P1DG_2d = get_functionspace(self.mesh2d, DG, 1, name='P1DG_2d')
+        self.function_spaces.P1DGv_2d = VectorFunctionSpace(self.mesh2d, DG, 1, name='P1DGv_2d')
         # 2D velocity space
         if self.options.element_family in ['rt-dg', 'bdm-dg']:
             family_prefix = self.options.element_family.split('-')[0].upper()
@@ -336,18 +277,23 @@ class FlowSolver2d(FrozenClass):
             fam = family_prefix + family_suffix[cell]
             degree = self.options.polynomial_degree + 1
             self.function_spaces.U_2d = get_functionspace(self.mesh2d, fam, degree, name='U_2d')
-            self.function_spaces.H_2d = get_functionspace(self.mesh2d, 'DG', self.options.polynomial_degree, name='H_2d')
+            self.function_spaces.H_2d = get_functionspace(self.mesh2d, DG, self.options.polynomial_degree, name='H_2d')
         elif self.options.element_family == 'dg-cg':
-            self.function_spaces.U_2d = VectorFunctionSpace(self.mesh2d, 'DG', self.options.polynomial_degree, name='U_2d')
+            self.function_spaces.U_2d = VectorFunctionSpace(self.mesh2d, DG, self.options.polynomial_degree, name='U_2d')
             self.function_spaces.H_2d = get_functionspace(self.mesh2d, 'CG', self.options.polynomial_degree+1, name='H_2d')
         elif self.options.element_family == 'dg-dg':
-            self.function_spaces.U_2d = VectorFunctionSpace(self.mesh2d, 'DG', self.options.polynomial_degree, name='U_2d')
-            self.function_spaces.H_2d = get_functionspace(self.mesh2d, 'DG', self.options.polynomial_degree, name='H_2d')
+            self.function_spaces.U_2d = VectorFunctionSpace(self.mesh2d, DG, self.options.polynomial_degree, name='U_2d')
+            self.function_spaces.H_2d = get_functionspace(self.mesh2d, DG, self.options.polynomial_degree, name='H_2d')
         else:
             raise Exception('Unsupported finite element family {:}'.format(self.options.element_family))
         self.function_spaces.V_2d = MixedFunctionSpace([self.function_spaces.U_2d, self.function_spaces.H_2d])
 
-        self.function_spaces.Q_2d = get_functionspace(self.mesh2d, 'DG', 1, name='Q_2d')
+        if self.options.tracer_element_family == 'dg':
+            self.function_spaces.Q_2d = get_functionspace(self.mesh2d, 'DG', 1, name='Q_2d')
+        elif self.options.tracer_element_family == 'cg':
+            self.function_spaces.Q_2d = get_functionspace(self.mesh2d, 'CG', 1, name='Q_2d')
+        else:
+            raise Exception('Unsupported finite element family {:}'.format(self.options.tracer_element_family))
 
         self._isfrozen = True
 
@@ -362,7 +308,6 @@ class FlowSolver2d(FrozenClass):
         self.fields.solution_2d = Function(self.function_spaces.V_2d, name='solution_2d')
         self.fields.h_elem_size_2d = Function(self.function_spaces.P1_2d)
         get_horizontal_elem_size_2d(self.fields.h_elem_size_2d)
-        self.set_sipg_parameter()
         self.set_wetting_and_drying_alpha()
         self.depth = DepthExpression(self.fields.bathymetry_2d,
                                      use_nonlinear_equations=self.options.use_nonlinear_equations,
@@ -373,21 +318,18 @@ class FlowSolver2d(FrozenClass):
         self.eq_sw = shallowwater_eq.ShallowWaterEquations(
             self.fields.solution_2d.function_space(),
             self.depth,
-            self.options
+            self.options,
         )
         self.eq_sw.bnd_functions = self.bnd_functions['shallow_water']
         if self.options.solve_tracer:
             self.fields.tracer_2d = Function(self.function_spaces.Q_2d, name='tracer_2d')
             if self.options.use_tracer_conservative_form:
                 self.eq_tracer = conservative_tracer_eq_2d.ConservativeTracerEquation2D(
-                    self.function_spaces.Q_2d, self.depth,
-                    use_lax_friedrichs=self.options.use_lax_friedrichs_tracer,
-                    sipg_parameter=self.options.sipg_parameter_tracer)
+                    self.function_spaces.Q_2d, self.depth, self.options)
             else:
+                uv_2d, elev_2d = self.fields.solution_2d.split()
                 self.eq_tracer = tracer_eq_2d.TracerEquation2D(
-                    self.function_spaces.Q_2d, self.depth,
-                    use_lax_friedrichs=self.options.use_lax_friedrichs_tracer,
-                    sipg_parameter=self.options.sipg_parameter_tracer)
+                    self.function_spaces.Q_2d, self.depth, self.options, uv_2d)
             if self.options.use_limiter_for_tracers and self.options.polynomial_degree > 0:
                 self.tracer_limiter = limiter.VertexBasedP1DGLimiter(self.function_spaces.Q_2d)
             else:
@@ -402,9 +344,7 @@ class FlowSolver2d(FrozenClass):
         if sediment_options.solve_suspended_sediment:
             self.fields.sediment_2d = Function(self.function_spaces.Q_2d, name='sediment_2d')
             self.eq_sediment = sediment_eq_2d.SedimentEquation2D(
-                self.function_spaces.Q_2d, self.depth, self.sediment_model,
-                use_lax_friedrichs=self.options.use_lax_friedrichs_tracer,
-                sipg_parameter=self.options.sipg_parameter_tracer,
+                self.function_spaces.Q_2d, self.depth, self.options, self.sediment_model,
                 conservative=sediment_options.use_sediment_conservative_form)
             if self.options.use_limiter_for_tracers and self.options.polynomial_degree > 0:
                 self.tracer_limiter = limiter.VertexBasedP1DGLimiter(self.function_spaces.Q_2d)
@@ -412,10 +352,12 @@ class FlowSolver2d(FrozenClass):
                 self.tracer_limiter = None
 
         if sediment_options.solve_exner:
-            self.eq_exner = exner_eq.ExnerEquation(
-                self.fields.bathymetry_2d.function_space(), self.depth,
-                depth_integrated_sediment=sediment_options.use_sediment_conservative_form, sediment_model=self.sediment_model)
-
+            if element_continuity(self.fields.bathymetry_2d.function_space().ufl_element()).horizontal in ['cg']:
+                self.eq_exner = exner_eq.ExnerEquation(
+                    self.fields.bathymetry_2d.function_space(), self.depth,
+                    depth_integrated_sediment=sediment_options.use_sediment_conservative_form, sediment_model=self.sediment_model)
+            else:
+                raise NotImplementedError("Exner equation can currently only be implemented if the bathymetry is defined on a continuous space")
         self._isfrozen = True  # disallow creating new attributes
 
     def get_swe_timestepper(self, integrator):
@@ -581,9 +523,9 @@ class FlowSolver2d(FrozenClass):
             raise Exception('Unknown time integrator type: {:s}'.format(self.options.timestepper_type))
         if self.options.solve_tracer:
             try:
-                assert self.options.timestepper_type not in ('PressureProjectionPicard', 'SSPIMEX', 'SteadyState')
+                assert self.options.timestepper_type not in ('PressureProjectionPicard', 'SSPIMEX')
             except AssertionError:
-                raise NotImplementedError("2D tracer model currently only supports SSPRK33, ForwardEuler, BackwardEuler, DIRK22, DIRK33 and CrankNicolson time integrators.")
+                raise NotImplementedError("2D tracer model currently only supports SSPRK33, ForwardEuler, SteadyState, BackwardEuler, DIRK22, DIRK33 and CrankNicolson time integrators.")
             self.timestepper = coupled_timeintegrator_2d.CoupledMatchingTimeIntegrator2D(
                 weakref.proxy(self), steppers[self.options.timestepper_type],
             )

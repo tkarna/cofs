@@ -59,6 +59,7 @@ def rst_all_options(cls, nspace=0, prefix=None):
         lines.append(indent(dedent(help), 4 + nspace))
         lines.append('')
         lines.append(indent("Default:\n", 4 + nspace))
+        dvr = dvr or 'None'
         lines.append(indent(dvr.replace("\\n", "\\\\n"), 4 + nspace))
         if extra is not None:
             lines.append(indent(extra, 4 + nspace))

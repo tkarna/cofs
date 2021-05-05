@@ -33,6 +33,7 @@ simulations that demonstrate basic functionality.
     2D channel with closed boundaries<demos/demo_2d_channel.py>
     2D channel with boundary conditions<demos/demo_2d_channel_bnd.py>
     3D channel with boundary conditions<demos/demo_3d_channel.py>
+    2D tracer advection in a rotational velocity field <demos/demo_2d_tracer.py>
 
 Manual
 ======
@@ -40,7 +41,9 @@ Manual
 .. toctree::
     :maxdepth: 1
 
-    2D model formulation<model_formulation_2d>
+    2D hydrodynamics model formulation<model_formulation_2d>
+    2D tracer model formulation<tracer_formulation_2d>
+    2D sediment model formulation<sediment_formulation_2d>
     3D model formulation<model_formulation_3d>
     Model outputs and visualization<outputs_and_visu>
     List of 2D model options<model_options_2d>

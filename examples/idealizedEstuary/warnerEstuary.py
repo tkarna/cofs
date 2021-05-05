@@ -37,7 +37,8 @@ t_end = 18*24*3600
 t_export = 9*60.0
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 5*t_export
+    layers = 5
+    t_end = t_export
 
 depth_ocean = 10
 u_tide = 0.4

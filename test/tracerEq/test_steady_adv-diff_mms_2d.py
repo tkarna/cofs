@@ -273,21 +273,12 @@ def conservative_form(request):
 
 def test_convergence(setup, timestepper_type, conservative_form):
     run_convergence(setup, [1, 2, 3], save_plot=False, timestepper_type=timestepper_type,
-                    use_automatic_sipg_parameter=False,
-                    use_tracer_conservative_form=conservative_form)
-
-
-# only setup2 has nonzero diffusion:
-def test_convergence_auto_sipg(timestepper_type, conservative_form):
-    run_convergence(Setup2, [1, 2, 3], save_plot=False, timestepper_type=timestepper_type,
-                    use_automatic_sipg_parameter=True,
                     use_tracer_conservative_form=conservative_form)
 
 
 # setup4 is valid for conservative only
 def test_convergence_conservative_only(timestepper_type):
     run_convergence(Setup4, [1, 2, 3], save_plot=False, timestepper_type=timestepper_type,
-                    use_automatic_sipg_parameter=False,
                     use_tracer_conservative_form=True)
 
 

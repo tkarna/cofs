@@ -41,7 +41,9 @@ t_export = 3 * 3600
 outputdir = 'outputs_' + reso_str
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 1*t_export
+    t_export = 900.
+    t_end = t_export
+    n_layers = 3
 
 delta_x = delta_x_dict[reso_str]
 

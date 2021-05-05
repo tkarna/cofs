@@ -9,8 +9,8 @@ numerical methods used in Thetis to model sediment transport and morphological c
 In the figure produced, we compare our results with experimental data from a lab study
 
 For more details, see
-[1] Clare et al. 2020. “Hydro-morphodynamics 2D Modelling Using a Discontinuous
-    Galerkin Discretisation.” EarthArXiv. January 9. doi:10.31223/osf.io/tpqvy.
+[1] Clare et al. (2020). Hydro-morphodynamics 2D modelling using a discontinuous Galerkin discretisation.
+    Computers & Geosciences, 104658. https://doi.org/10.1016/j.cageo.2020.104658
 """
 
 from thetis import *
@@ -85,8 +85,8 @@ options.sediment_model_options.use_bedload = True
 options.sediment_model_options.solve_exner = True
 
 options.sediment_model_options.use_sediment_conservative_form = conservative
-options.sediment_model_options.average_sediment_size = 160*(10**(-6))
-options.sediment_model_options.bed_reference_height = 0.025
+options.sediment_model_options.average_sediment_size = Constant(160*(10**(-6)))
+options.sediment_model_options.bed_reference_height = Constant(0.025)
 options.sediment_model_options.morphological_acceleration_factor = Constant(morfac)
 
 options.simulation_end_time = end_time/morfac

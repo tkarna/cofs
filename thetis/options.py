@@ -49,6 +49,11 @@ class SteadyStateTimestepperOptions2d(TimeStepperOptions):
         'pc_type': 'lu',
         'mat_type': 'aij'
     }).tag(config=True)
+    solver_parameters_tracer = PETScSolverParameters({
+        'ksp_type': 'preonly',
+        'pc_type': 'lu',
+        'mat_type': 'aij'
+    }).tag(config=True)
 
 
 class CrankNicolsonTimestepperOptions2d(SemiImplicitTimestepperOptions2d):
@@ -432,6 +437,13 @@ class CommonModelOptions(FrozenConfigurable):
 
         Used to compute max stable diffusion time step.
         """).tag(config=True)
+    horizontal_diffusivity_scale = FiredrakeConstantTraitlet(
+        Constant(1.0), help="""
+        Maximum horizontal diffusivity
+
+        Used to compute the mesh Peclet number in
+        the 2D tracer SUPG stabilization scheme.
+        """).tag(config=True)
     output_directory = Unicode(
         'outputs', help="Directory where model output files are stored").tag(config=True)
     no_exports = Bool(
@@ -502,24 +514,10 @@ class CommonModelOptions(FrozenConfigurable):
         None, allow_none=True, help="Source term for 2D tracer equation").tag(config=True)
     horizontal_diffusivity = FiredrakeCoefficient(
         None, allow_none=True, help="Horizontal diffusivity for tracers and sediment").tag(config=True)
-    use_automatic_sipg_parameter = Bool(False, help=r"""
-        Toggle automatic computation of the SIPG penalty parameter used in viscosity and
-        diffusivity terms.
-
-        By default, this parameter is set to
-
-        ..math::
-            \alpha = 5p(p+1),
-
-        where :math:`p` is the polynomial degree of the velocity space.
-
-        For anisotropic meshes, it is advisable to use the automatic SIPG parameter,
-        rather than the default.
-        """).tag(config=True)
-    sipg_parameter = FiredrakeScalarExpression(
-        Constant(10.0), help="Penalty parameter used for horizontal viscosity terms.").tag(config=True)
-    sipg_parameter_tracer = FiredrakeScalarExpression(
-        Constant(10.0), help="Penalty parameter used for horizontal diffusivity terms.").tag(config=True)
+    sipg_factor = FiredrakeScalarExpression(
+        Constant(1.0), help="Penalty parameter scaling factor for horizontal viscosity terms.").tag(config=True)
+    sipg_factor_tracer = FiredrakeScalarExpression(
+        Constant(1.0), help="Penalty parameter scaling factor for horizontal diffusivity terms.").tag(config=True)
 
 
 class SedimentModelOptions(FrozenHasTraits):
@@ -673,6 +671,14 @@ class ModelOptions2d(CommonModelOptions):
 
         Advects tracer in the associated (constant) velocity field.
         """).tag(config=True)
+    tracer_element_family = Enum(
+        ['dg', 'cg'],
+        default_value='dg',
+        help="""Finite element family for tracer transport
+
+        2D solver supports 'dg' or 'cg'.""").tag(config=True)
+    use_supg_tracer = Bool(
+        False, help="Use SUPG stabilisation in tracer advection").tag(config=True)
 
 
 @attach_paired_options("timestepper_type",
@@ -803,13 +809,13 @@ class ModelOptions3d(CommonModelOptions):
         Constant(10.0), help="Constant temperature if temperature is not solved").tag(config=True)
     constant_salinity = FiredrakeConstantTraitlet(
         Constant(0.0), help="Constant salinity if salinity is not solved").tag(config=True)
-    sipg_parameter_vertical = FiredrakeScalarExpression(
-        Constant(10.0), help="Penalty parameter used for vertical viscosity terms.").tag(config=True)
-    sipg_parameter_vertical_tracer = FiredrakeScalarExpression(
-        Constant(10.0), help="Penalty parameter used for vertical diffusivity terms.").tag(config=True)
-    sipg_parameter_turb = FiredrakeScalarExpression(
-        Constant(1.5), help="Penalty parameter used for horizontal diffusivity terms of the turbulence model.").tag(config=True)
-    sipg_parameter_vertical_turb = FiredrakeScalarExpression(
-        Constant(1.0), help="Penalty parameter used for vertical diffusivity terms of the turbulence model.").tag(config=True)
+    sipg_factor_vertical = FiredrakeScalarExpression(
+        Constant(1.0), help="Penalty parameter scaling factor for vertical viscosity terms.").tag(config=True)
+    sipg_factor_vertical_tracer = FiredrakeScalarExpression(
+        Constant(1.0), help="Penalty parameter scaling factor for vertical diffusivity terms.").tag(config=True)
+    sipg_factor_turb = FiredrakeScalarExpression(
+        Constant(1.0), help="Penalty parameter scaling factor for horizontal diffusivity terms of the turbulence model.").tag(config=True)
+    sipg_factor_vertical_turb = FiredrakeScalarExpression(
+        Constant(1.0), help="Penalty parameter scaling factor for vertical diffusivity terms of the turbulence model.").tag(config=True)
     internal_pg_scalar = FiredrakeConstantTraitlet(
         None, allow_none=True, help="A constant to scale the internal pressure gradient. Used to ramp up the model.").tag(config=True)

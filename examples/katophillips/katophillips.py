@@ -61,7 +61,7 @@ def katophillips_test(layers=25, gls_closure='k-omega',
     u_mag = 1.0
 
     if os.getenv('THETIS_REGRESSION_TEST') is not None:
-        t_end = 5*t_export
+        t_end = t_export
 
     # bathymetry
     P1_2d = get_functionspace(mesh2d, 'CG', 1)

@@ -20,7 +20,7 @@ pipeline {
                 }
             }
         }
-        stage('Install Pyadjoint') {
+        stage('Update Firedrake') {
             steps {
                 sh 'mkdir build'
                 dir('build') {
@@ -30,10 +30,7 @@ sudo -u firedrake /bin/bash << Here
 whoami
 cd /home/firedrake
 . /home/firedrake/firedrake/bin/activate
-firedrake-update --install pyadjoint || (cat firedrake-update.log && /bin/false)
-chmod a+rwx /home/firedrake/firedrake/lib/python*/site-packages
-chmod a+rwx /home/firedrake/firedrake/lib/python*/site-packages/easy-install.pth
-chmod a+rwx /home/firedrake/firedrake/bin
+firedrake-update || (cat firedrake-update.log && /bin/false)
 install -d /home/firedrake/firedrake/.cache
 chmod -R a+rwx /home/firedrake/firedrake/.cache
 firedrake-status
@@ -48,8 +45,12 @@ Here
                 timestamps {
                     sh '''
 . /home/firedrake/firedrake/bin/activate
-python -m pip install -r requirements.txt
-python -m pip install -e .
+sudo -u firedrake -H /home/firedrake/firedrake/bin/python -m pip install -r requirements.txt
+sudo -u firedrake -H chmod a+rwx /home/firedrake/firedrake/lib/python*/site-packages
+sudo -u firedrake -H chmod a+rwx /home/firedrake/firedrake/lib/python*/site-packages/easy-install.pth
+sudo -u firedrake -H chmod a+rwx /home/firedrake/firedrake/bin
+chmod a+w .
+/home/firedrake/firedrake/bin/python -m pip install -e .
 '''
                 }
             }

@@ -39,8 +39,10 @@ comm = COMM_WORLD
 physical_constants['rho0'] = 1020.
 
 refinement = 1  # normal = 4
+if os.getenv('THETIS_REGRESSION_TEST') is not None:
+    refinement = 0.5
 lx = ly = 1600e3
-nx = ny = 43*refinement
+nx = ny = int(43*refinement)
 delta_x = lx/nx
 delta_y = ly/ny
 mesh2d = PeriodicRectangleMesh(nx, ny, lx, ly, direction='x')
@@ -53,7 +55,9 @@ t_end = 3*365*24*3600.
 t_export = 1*24*3600.
 
 if os.getenv('THETIS_REGRESSION_TEST') is not None:
-    t_end = 1*t_export
+    t_export = 900.
+    t_end = t_export
+    nlayers = 4
 
 # bathymetry
 P1_2d = get_functionspace(mesh2d, 'CG', 1)
