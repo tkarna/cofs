@@ -541,9 +541,9 @@ class SedimentModelOptions(FrozenHasTraits):
     porosity = FiredrakeCoefficient(
         Constant(0.4), help="Bed porosity for exner equation").tag(config=True)
     max_angle = FiredrakeConstantTraitlet(
-         Constant(32), help="Angle of repose for sediment slide mechanism").tag(config=True)
+        Constant(32), help="Angle of repose for sediment slide mechanism in degrees").tag(config=True)
     meshgrid_size = FiredrakeConstantTraitlet(
-         Constant(0), help = "Average meshgrid size for sediment slide mechanism")
+        Constant(0), help="Average meshgrid size for sediment slide mechanism")
     morphological_acceleration_factor = FiredrakeConstantTraitlet(
         Constant(1), help="""Rate at which timestep in exner equation is accelerated compared to timestep for model
 

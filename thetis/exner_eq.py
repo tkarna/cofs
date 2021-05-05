@@ -102,7 +102,7 @@ class ExnerBedloadTerm(ExnerTerm):
     def residual(self, solution, solution_old, fields, fields_old, bnd_conditions=None):
         f = 0
 
-        qbx, qby = self.sediment_model.get_bedload_term(solution)      
+        qbx, qby = self.sediment_model.get_bedload_term(solution)
 
         morfac = fields.get('morfac')
         porosity = fields.get('porosity')
@@ -117,7 +117,7 @@ class ExnerBedloadTerm(ExnerTerm):
             keys = [*bnd_conditions[bnd_marker].keys()]
             values = [*bnd_conditions[bnd_marker].values()]
             for i in range(len(keys)):
-                if keys[i] != 'elev' and float(values[i]) == 0.0:
+                if keys[i] != 'elev' and all(j == 0.0 for j in [float(j) for j in values[i]]):
                     no_contr = True
 
             if not no_contr:
@@ -127,23 +127,23 @@ class ExnerBedloadTerm(ExnerTerm):
 
         return -f
 
-    
+
 class ExnerSedimentSlideTerm(ExnerTerm):
     r"""
-    TO DO
+    Term which adds component to bedload transport to ensure the slope angle does not exceed a certain value
     """
     def residual(self, solution, solution_old, fields, fields_old, bnd_conditions=None):
         f = 0
 
-        diff_tensor = self.sediment_model.get_sediment_slide_term(solution)    
+        diff_tensor = self.sediment_model.get_sediment_slide_term(solution)
 
         diff_flux = dot(diff_tensor, grad(-solution))
         f += inner(grad(self.test), diff_flux)*dx
-        f += -avg(self.sediment_model.sigma)*inner(jump(self.test, self.sediment_model.n),dot(avg(diff_tensor), jump(solution, self.sediment_model.n)))*dS
-        f += -inner(avg(dot(diff_tensor, grad(self.test))),jump(solution, self.sediment_model.n))*dS
-        f += -inner(jump(self.test, self.sediment_model.n), avg(dot(diff_tensor, grad(solution))))*dS  
-        
-        return -f 
+        f += -avg(self.sediment_model.sigma)*inner(jump(self.test, self.sediment_model.n), dot(avg(diff_tensor), jump(solution, self.sediment_model.n)))*dS
+        f += -inner(avg(dot(diff_tensor, grad(self.test))), jump(solution, self.sediment_model.n))*dS
+        f += -inner(jump(self.test, self.sediment_model.n), avg(dot(diff_tensor, grad(solution))))*dS
+
+        return -f
 
 
 class ExnerEquation(Equation):
@@ -170,4 +170,4 @@ class ExnerEquation(Equation):
         if sediment_model.use_bedload:
             self.add_term(ExnerBedloadTerm(*args), 'implicit')
         if sediment_model.use_sediment_slide:
-            self.add_term(ExnerSedimentSlideTerm(*args), 'implicit')            
+            self.add_term(ExnerSedimentSlideTerm(*args), 'implicit')

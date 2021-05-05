@@ -318,7 +318,7 @@ class SedimentModel(object):
         L = self.options.sediment_model_options.meshgrid_size
 
         degree_h = self.P1_2d.ufl_element().degree()
-        
+
         if degree_h == 0:
             self.sigma = 1.5 / CellSize(self.mesh2d)
         else:
@@ -337,11 +337,13 @@ class SedimentModel(object):
         # calculate normal to the bed
         nz = 1/sqrt(1 + (dzdx**2 + dzdy**2))
 
-        betaangle = asin(sqrt(1 - (nz**2)))
+        self.betaangle = asin(sqrt(1 - (nz**2)))
         self.tanbeta = sqrt(1 - (nz**2))/nz
 
         # calculating magnitude of added component
-        qaval = conditional(self.tanbeta - self.tanphi > 0, (1-self.options.sediment_model_options.porosity)*0.5*(L**2)*(self.tanbeta - self.tanphi)/(cos(betaangle*self.options.timestep*self.options.sediment_model_options.morphological_acceleration_factor)), 0)
+        qaval = conditional(self.tanbeta - self.tanphi > 0, (1-self.options.sediment_model_options.porosity)
+                            * 0.5*(L**2)*(self.tanbeta - self.tanphi)/(cos(self.betaangle*self.options.timestep
+                                                                           * self.options.sediment_model_options.morphological_acceleration_factor)), 0)
         # multiplying by direction
         alphaconst = conditional(sqrt(1 - (nz**2)) > 0, - qaval*(nz**2)/sqrt(1 - (nz**2)), 0)
 
