@@ -482,6 +482,10 @@ class CommonModelOptions(FrozenConfigurable):
 
         Bottom stress is :math:`\tau_b/\rho_0 = -g \mu^2 |\mathbf{u}|\mathbf{u}/H^{1/3}`
         """).tag(config=True)
+    use_white_colebrook = Bool(
+        False, help=r"""
+        Use White-Colebrook formula for 2D quadratic drag parameter. This formula
+        uses the Nikuradse bed roughness""").tag(config=True)
     nikuradse_bed_roughness = FiredrakeScalarExpression(
         None, allow_none=True, help=r"""
         Nikuradse bed roughness length used to construct the 2D quadratic drag parameter :math:`C_D`.
@@ -521,10 +525,12 @@ class SedimentModelOptions(FrozenHasTraits):
     solve_suspended_sediment = Bool(False, help='Solve suspended sediment transport equation').tag(config=True)
     use_sediment_conservative_form = Bool(False, help='Solve 2D sediment transport in the conservative form').tag(config=True)
     use_bedload = Bool(False, help='Use bedload transport in sediment model').tag(config=True)
+    use_sediment_slide = Bool(False, help='Use sediment slide mechanism in sediment model').tag(config=True)
     use_angle_correction = Bool(True, help='Switch to use slope effect angle correction').tag(config=True)
     use_slope_mag_correction = Bool(True, help='Switch to use slope effect magnitude correction').tag(config=True)
     use_secondary_current = Bool(False, help='Switch to use secondary current for helical flow effect').tag(config=True)
     average_sediment_size = FiredrakeScalarExpression(None, allow_none=True, help='Average sediment size').tag(config=True)
+    slide_region = NonNegativeFloat(None, allow_none=True, help='Region where sediment slide occurs. If None then sediment slide occurs over whole domain.').tag(config=True)
     bed_reference_height = FiredrakeScalarExpression(None, allow_none=True, help='Bottom bed reference height').tag(config=True)
     use_advective_velocity_correction = Bool(True, help="""
         Switch to apply correction to advective velocity used in sediment equation
@@ -534,6 +540,10 @@ class SedimentModelOptions(FrozenHasTraits):
         """).tag(config=True)
     porosity = FiredrakeCoefficient(
         Constant(0.4), help="Bed porosity for exner equation").tag(config=True)
+    max_angle = FiredrakeConstantTraitlet(
+        Constant(32), help="Angle of repose for sediment slide mechanism in degrees").tag(config=True)
+    meshgrid_size = FiredrakeConstantTraitlet(
+        Constant(0), help="Average meshgrid size for sediment slide mechanism")
     morphological_acceleration_factor = FiredrakeConstantTraitlet(
         Constant(1), help="""Rate at which timestep in exner equation is accelerated compared to timestep for model
 

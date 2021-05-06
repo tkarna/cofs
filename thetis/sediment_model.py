@@ -85,10 +85,13 @@ class SedimentModel(object):
         self.options = options
         self.solve_suspended_sediment = options.sediment_model_options.solve_suspended_sediment
         self.use_bedload = options.sediment_model_options.use_bedload
+        self.use_sediment_slide = options.sediment_model_options.use_sediment_slide
         self.use_angle_correction = options.sediment_model_options.use_angle_correction
         self.use_slope_mag_correction = options.sediment_model_options.use_slope_mag_correction
         self.use_advective_velocity_correction = options.sediment_model_options.use_advective_velocity_correction
         self.use_secondary_current = options.sediment_model_options.use_secondary_current
+
+        self.mesh2d = mesh2d
 
         if not self.use_bedload:
             if self.use_angle_correction:
@@ -105,7 +108,10 @@ class SedimentModel(object):
         # define function spaces
         self.P1DG_2d = get_functionspace(mesh2d, "DG", 1)
         self.P1_2d = get_functionspace(mesh2d, "CG", 1)
+        self.R_1d = get_functionspace(mesh2d, "R", 0)
         self.P1v_2d = VectorFunctionSpace(mesh2d, "CG", 1)
+
+        self.n = FacetNormal(mesh2d)
 
         # define parameters
         self.g = physical_constants['g_grav']
@@ -222,6 +228,10 @@ class SedimentModel(object):
             the bedlevel (positive downwards).
         """
 
+        # define bed gradient
+        dzdx = self.old_bathymetry_2d.dx(0)
+        dzdy = self.old_bathymetry_2d.dx(1)
+
         if self.use_slope_mag_correction:
             # slope effect magnitude correction due to gravity where beta is a parameter normally set to 1.3
             # we use z_n1 and equals so that we can use an implicit method in Exner
@@ -233,10 +243,6 @@ class SedimentModel(object):
             # slope effect angle correction due to gravity
             cparam = Function(self.P1_2d).interpolate((self.rhos-self.rhow)*self.g*self.average_size*(self.surbeta2**2))
             tt1 = conditional(self.stress > Constant(1e-10), sqrt(cparam/self.stress), sqrt(cparam/Constant(1e-10)))
-
-            # define bed gradient
-            dzdx = self.old_bathymetry_2d.dx(0)
-            dzdy = self.old_bathymetry_2d.dx(1)
 
             # add on a factor of the bed gradient to the normal
             aa = self.salfa + tt1*dzdy
@@ -302,6 +308,48 @@ class SedimentModel(object):
             qby = qb_total*self.salfa
 
         return qbx, qby
+
+    def get_sediment_slide_term(self, bathymetry):
+        # add component to bedload transport to ensure the slope angle does not exceed a certain value
+
+        # maximum gradient allowed by sediment slide mechanism
+        self.tanphi = tan(self.options.sediment_model_options.max_angle*pi/180)
+        # approximate mesh step size for sediment slide mechanism
+        L = self.options.sediment_model_options.meshgrid_size
+
+        degree_h = self.P1_2d.ufl_element().degree()
+
+        if degree_h == 0:
+            self.sigma = 1.5 / CellSize(self.mesh2d)
+        else:
+            self.sigma = 5.0*degree_h*(degree_h + 1)/CellSize(self.mesh2d)
+
+        # define bed gradient
+        x, y = SpatialCoordinate(self.mesh2d)
+
+        if self.options.sediment_model_options.slide_region is not None:
+            dzdx = conditional(x < self.options.sediment_model_options.slide_region, bathymetry.dx(0), Constant(0.0))
+            dzdy = conditional(x < self.options.sediment_model_options.slide_region, bathymetry.dx(1), Constant(0.0))
+        else:
+            dzdx = bathymetry.dx(0)
+            dzdy = bathymetry.dx(1)
+
+        # calculate normal to the bed
+        nz = 1/sqrt(1 + (dzdx**2 + dzdy**2))
+
+        self.betaangle = asin(sqrt(1 - (nz**2)))
+        self.tanbeta = sqrt(1 - (nz**2))/nz
+
+        # calculating magnitude of added component
+        qaval = conditional(self.tanbeta - self.tanphi > 0, (1-self.options.sediment_model_options.porosity)
+                            * 0.5*(L**2)*(self.tanbeta - self.tanphi)/(cos(self.betaangle*self.options.timestep
+                                                                           * self.options.sediment_model_options.morphological_acceleration_factor)), 0)
+        # multiplying by direction
+        alphaconst = conditional(sqrt(1 - (nz**2)) > 0, - qaval*(nz**2)/sqrt(1 - (nz**2)), 0)
+
+        diff_tensor = as_matrix([[alphaconst, 0, ], [0, alphaconst, ]])
+
+        return diff_tensor
 
     def get_deposition_coefficient(self):
         """Returns coefficient :math:`C` such that :math:`C/H*sediment` is deposition term in sediment equation
