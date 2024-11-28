@@ -90,7 +90,7 @@ station_names = [
 ]
 sta_manager = inversion_tools.StationObservationManager(
     mesh2d, output_directory=options.output_directory)
-sta_manager.load_observation_data(observation_data_dir, station_names, variable)
+sta_manager.load_elev_observation_data(observation_data_dir, station_names, variable)
 sta_manager.set_model_field(solver_obj.fields.elev_2d)
 
 # Define the scaling for the cost function so that J ~ O(1)
@@ -111,9 +111,11 @@ for control_name in controls:
 
 # Extract the regularized cost function
 cost_function = inv_manager.get_cost_function(solver_obj)
+cost_function_callback = inversion_tools.CostFunctionCallback(solver_obj, cost_function)
+solver_obj.add_callback(cost_function_callback, 'timestep')
 
 # Solve and setup reduced functional
-solver_obj.iterate(export_func=cost_function)  # note that export time should equal dt if not using a custom callback
+solver_obj.iterate()
 inv_manager.stop_annotating()
 
 # Run inversion

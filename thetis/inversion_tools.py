@@ -7,12 +7,57 @@ from .utility import create_directory, print_function_value_range, get_functions
 from .log import print_output
 from .diagnostics import HessianRecoverer2D
 from .exporter import HDF5Exporter
+from .callback import DiagnosticCallback
 import abc
 import numpy
 import h5py
 from scipy.interpolate import interp1d
 import time as time_mod
 import os
+
+
+def group_consecutive_elements(indices):
+    grouped_list = []
+    current_group = []
+
+    for index in indices:
+        if not current_group or index == current_group[-1]:
+            current_group.append(index)
+        else:
+            grouped_list.append(current_group)
+            current_group = [index]
+
+    # Append the last group
+    if current_group:
+        grouped_list.append(current_group)
+
+    return grouped_list
+
+
+class CostFunctionCallback(DiagnosticCallback):
+    def __init__(self, solver_obj, cost_function, **kwargs):
+        # Disable logging and HDF5 export
+        kwargs.setdefault('append_to_log', False)
+        kwargs.setdefault('export_to_hdf5', False)
+        super().__init__(solver_obj, **kwargs)
+        self.cost_function = cost_function
+
+    @property
+    def name(self):
+        return 'cost_function_callback'
+
+    @property
+    def variable_names(self):
+        return ['cost_function']
+
+    def __call__(self):
+        # Evaluate the cost function
+        cost_value = self.cost_function()
+        return [cost_value]
+
+    def message_str(self, cost_value):
+        # Return a string representation of the cost function value
+        return f"Cost function value: {cost_value}"
 
 
 class InversionManager(FrozenHasTraits):
@@ -45,6 +90,7 @@ class InversionManager(FrozenHasTraits):
         self.output_dir = output_dir
         self.no_exports = no_exports or real
         self.real = real
+        self.maps = []
         self.penalty_parameters = penalty_parameters
         self.cost_function_scaling = cost_function_scaling or fd.Constant(1.0)
         self.sta_manager.cost_function_scaling = self.cost_function_scaling
@@ -52,6 +98,7 @@ class InversionManager(FrozenHasTraits):
         self.test_gradient = test_gradient
         self.outfiles_m = []
         self.outfiles_dJdm = []
+        self.outfile_index = []
         self.control_exporters = []
         self.initialized = False
 
@@ -71,6 +118,7 @@ class InversionManager(FrozenHasTraits):
         self.nb_grad_evals = 0
         self.control_coeff_list = []
         self.control_list = []
+        self.control_family = []
 
     def initialize(self):
         if not self.no_exports:
@@ -78,29 +126,58 @@ class InversionManager(FrozenHasTraits):
                 raise ValueError("Exports are not supported in Real mode.")
             create_directory(self.output_dir)
             create_directory(self.output_dir + '/hdf5')
-            for i in range(len(self.control_coeff_list)):
+            for i in range(max(self.outfile_index)+1):
                 self.outfiles_m.append(
                     fd.VTKFile(f'{self.output_dir}/control_progress_{i:02d}.pvd'))
                 self.outfiles_dJdm.append(
                     fd.VTKFile(f'{self.output_dir}/gradient_progress_{i:02d}.pvd'))
         self.initialized = True
 
-    def add_control(self, f):
+    def add_control(self, f, mapping=None, new_map=False):
         """
         Add a control field.
 
         Can be called multiple times in case of multiparameter optimization.
 
         :arg f: Function or Constant to be used as a control variable.
+        :kwarg mapping: map that dictates how each Control relates to the function being altered
+        :kwarg new_map: if True, create a new exporter
         """
+        if len(self.control_coeff_list) == 0:
+            new_map = True
+        if mapping:
+            self.maps.append(mapping)
+        else:
+            self.maps.append(None)
         self.control_coeff_list.append(f)
         self.control_list.append(Control(f))
+        function_space = f.function_space()
+        element = function_space.ufl_element()
+        family = element.family()
+        self.control_family.append(family)
         if isinstance(f, fd.Function) and not self.no_exports:
             j = len(self.control_coeff_list) - 1
             prefix = f'control_{j:02d}'
-            self.control_exporters.append(
-                HDF5Exporter(f.function_space(), self.output_dir + '/hdf5', prefix)
-            )
+            if family == 'Real':  # i.e. Control is a Constant (assigned to a mesh, so won't register as one)
+                if new_map:
+                    self.control_exporters.append(
+                        HDF5Exporter(get_functionspace(self.sta_manager.mesh, 'CG', 1), self.output_dir + '/hdf5',
+                                     prefix)
+                    )
+                    if len(self.control_coeff_list) == 1:
+                        self.outfile_index.append(0)
+                    else:
+                        self.outfile_index.append(self.outfile_index[-1] + 1)
+                else:
+                    self.outfile_index.append(self.outfile_index[-1])
+            else:  # i.e. Control is a Function
+                self.control_exporters.append(
+                    HDF5Exporter(function_space, self.output_dir + '/hdf5', prefix)
+                )
+                if len(self.control_coeff_list) == 1:
+                    self.outfile_index.append(0)
+                else:
+                    self.outfile_index.append(self.outfile_index[-1] + 1)
 
     def reset_counters(self):
         self.nb_grad_evals = 0
@@ -145,7 +222,7 @@ class InversionManager(FrozenHasTraits):
         toc = self.stop_clock()
         if self.i == 0:
             for f in self.control_coeff_list:
-                print_function_value_range(f, prefix='Initial')
+                print_function_value_range(f, name=f.name, prefix='Initial')
 
         elapsed = '-' if self.tic is None else f'{toc - self.tic:.1f} s'
         self.tic = toc
@@ -179,21 +256,54 @@ class InversionManager(FrozenHasTraits):
                      f'grad_ev={self.nb_grad_evals}, duration {elapsed}')
 
         if not self.no_exports:
-            # control output
-            for j in range(len(self.control_coeff_list)):
-                m = self.m_list[j]
-                # vtk format
-                o = self.outfiles_m[j]
-                m.rename(self.control_coeff_list[j].name())
-                o.write(m)
-                # hdf5 format
+            grouped_indices = group_consecutive_elements(self.outfile_index)
+            ref_index = 0
+            for j in range(len(self.outfiles_m)):
+                m = self.m_list[ref_index]
+                o_m = self.outfiles_m[j]
+                o_jm = self.outfiles_dJdm[j]
+                self.dJdm_list[ref_index].rename('Gradient')
                 e = self.control_exporters[j]
-                e.export(m)
-            # gradient output
-            for f, o in zip(self.dJdm_list, self.outfiles_dJdm):
-                # store gradient in vtk format
-                f.rename('Gradient')
-                o.write(f)
+                if len(grouped_indices[j]) > 1:
+                    # can only be Constants
+                    mesh2d = self.sta_manager.mesh
+                    P1_2d = get_functionspace(mesh2d, 'CG', 1)
+                    # vtk format
+                    field = fd.Function(P1_2d, name='control')
+                    self.update_n(field, self.m_list[ref_index:ref_index + len(grouped_indices[j])],
+                                  ref_index, ref_index + len(grouped_indices[j]))
+                    o_m.write(field)
+                    # hdf5 format
+                    e.export(field)
+                    # gradient output
+                    gradient = fd.Function(P1_2d, name='Gradient')
+                    self.update_n(gradient, self.dJdm_list[ref_index:ref_index + len(grouped_indices[j])],
+                                  ref_index, ref_index + len(grouped_indices[j]))
+                    o_jm.write(gradient)
+                else:
+                    if self.control_family[ref_index] == 'Real':
+                        mesh2d = self.sta_manager.mesh
+                        P1_2d = get_functionspace(mesh2d, 'CG', 1)
+                        # vtk format
+                        field = fd.Function(P1_2d, name='control')
+                        field.assign(domain_constant(m, mesh2d))
+                        o_m.write(field)
+                        # hdf5 format
+                        e.export(field)
+                        # gradient output
+                        gradient = fd.Function(P1_2d, name='Gradient')
+                        gradient.assign(domain_constant(self.dJdm_list[ref_index], mesh2d))
+                        o_jm.write(gradient)
+                    else:
+                        # control output
+                        # vtk format
+                        m.rename(self.control_coeff_list[j].name())
+                        o_m.write(m)
+                        # hdf5 format
+                        e.export(m)
+                        # gradient output
+                        o_jm.write(self.dJdm_list[ref_index])
+                ref_index += len(grouped_indices[j])
 
         self.i += 1
         self.reset_counters()
@@ -248,9 +358,17 @@ class InversionManager(FrozenHasTraits):
 
         if weight_by_variance:
             var = fd.Function(self.sta_manager.fs_points_0d)
-            for i, j in enumerate(self.sta_manager.local_station_index):
-                var.dat.data[i] = numpy.var(self.sta_manager.observation_values[j])
-            self.sta_manager.station_weight_0d.interpolate(1/var)
+            # in parallel access to .dat.data should be collective
+            if len(var.dat.data[:]) > 0:
+                for i, j in enumerate(self.sta_manager.local_station_index):
+                    if self.sta_manager.obs_param == 'elev':
+                        var.dat.data[i] = numpy.var(self.sta_manager.observation_elev[j])
+                    else:
+                        obs_speed = numpy.sqrt(
+                            numpy.array(self.sta_manager.observation_u[j]) ** 2
+                            + numpy.array(self.sta_manager.observation_v[j]) ** 2)
+                        var.dat.data[i] = numpy.var(obs_speed)
+            self.sta_manager.station_weight_0d.interpolate(1 / var)
 
         def cost_fn():
             t = solver_obj.simulation_time
@@ -295,6 +413,25 @@ class InversionManager(FrozenHasTraits):
                 self.sta_manager.dump_time_series()
 
         return optimization_callback
+
+    def update_n(self, n, m, start_index, end_index):
+        """
+        Update the function `n` by adding weighted masks from `m`.
+
+        This method resets `n` to zero and then adds the weighted masks defined in
+        `self.maps` to `n`. Each element in `m` is multiplied by the corresponding
+        mask before being added to `n`.
+
+        :param n: Function or Field to be updated.
+        :param m: List of Constants/Functions to be combined with the masks.
+        :param start_index: Starting map.
+        :param end_index: Final map.
+        :raises ValueError: If the lengths of `m` and `self.maps` do not match.
+        """
+        n.assign(0)
+        # Add the weighted masks to n
+        for m_, mask_ in zip(m, self.maps[start_index:end_index]):
+            n += m_ * mask_
 
     def minimize(self, opt_method="BFGS", bounds=None, **opt_options):
         """
@@ -354,8 +491,14 @@ class StationObservationManager:
     This object evaluates the model fields at the station locations,
     interpolates the observations time series to the model time, computes the
     error functional, and also stores the model's time series data to disk.
+
+    :param observation_param: The type of observation being compared. It can be either
+                              'elev' for elevation data or 'uv' for velocity data.
+                              Elevation data refers to the surface elevation time series,
+                              while velocity data ('uv') refers to the horizontal velocity
+                              components (u, v) at each station location.
     """
-    def __init__(self, mesh, output_directory='outputs'):
+    def __init__(self, mesh, output_directory='outputs', observation_param='elev'):
         """
         :arg mesh: the 2D mesh object.
         :kwarg output_directory: directory where model time series are stored.
@@ -367,35 +510,47 @@ class StationObservationManager:
         self.cost_function_scaling = fd.Constant(1.0)
         self.output_directory = output_directory
         # keep observation time series in memory
-        self.obs_func_list = []
+        self.obs_func_elev_list = []
+        self.obs_func_u_list = []
+        self.obs_func_v_list = []
         # keep model time series in memory during optimization progress
-        self.station_value_progress = []
+        self.station_value_elev_progress = []
+        self.station_value_u_progress = []
+        self.station_value_v_progress = []
         # model time when cost function was evaluated
         self.simulation_time = []
+        self.obs_param = observation_param
         self.model_observation_field = None
         self.initialized = False
 
     def register_observation_data(self, station_names, variable, time,
-                                  values, x, y, start_times=None, end_times=None):
+                                  x, y, u=None, v=None, elev=None, start_times=None, end_times=None):
         """
         Add station time series data to the object.
 
         The `x`, and `y` coordinates must be such that
         they allow extraction of model data at the same coordinates.
 
+        Observation data is either elevation or velocity u, v components.
+
         :arg list station_names: list of station names
         :arg str variable: canonical variable name, e.g. 'elev'
         :arg list time: array of time stamps, one for each station
-        :arg list values: array of observations, one for each station
+        :arg list elev: array of elevation observations, one for each station
         :arg list x: list of station x coordinates
         :arg list y: list of station y coordinates
         :kwarg list start_times: optional start times for the observation periods
         :kwarg list end_times: optional end times for the observation periods
         """
+        if elev is None and (u is None or v is None):
+            raise ValueError("Either 'elev' must be provided, or both 'u' and 'v' must be provided.")
+
         self.station_names = station_names
         self.variable = variable
         self.observation_time = time
-        self.observation_values = values
+        self.observation_elev = elev
+        self.observation_u = u
+        self.observation_v = v
         self.observation_x = x
         self.observation_y = y
         num_stations = len(station_names)
@@ -408,12 +563,12 @@ class StationObservationManager:
         """
         self.model_observation_field = function
 
-    def load_observation_data(self, observation_data_dir, station_names, variable,
-                              start_times=None, end_times=None):
+    def load_elev_observation_data(self, observation_data_dir, station_names, variable,
+                                   start_times=None, end_times=None):
         """
-        Load observation data from disk.
+        Load elevation observation data from disk.
 
-        Assumes that observation data were stored with
+        Assumes that elevation observation data were stored with
         `TimeSeriesCallback2D` during the forward run. For generic case, use
         `register_observation_data` instead.
 
@@ -445,7 +600,7 @@ class StationObservationManager:
         observation_x, observation_y = numpy.array(observation_coords).T
         self.register_observation_data(
             station_names, variable, observation_time,
-            observation_values, observation_x, observation_y,
+            observation_x, observation_y, elev=observation_values,
             start_times=start_times, end_times=end_times,
         )
         self.construct_evaluator()
@@ -473,11 +628,17 @@ class StationObservationManager:
         xy = numpy.array((self.observation_x, self.observation_y)).T
         mesh0d = fd.VertexOnlyMesh(self.mesh, xy)
         self.fs_points_0d = fd.FunctionSpace(mesh0d, 'DG', 0)
-        self.obs_values_0d = fd.Function(self.fs_points_0d, name='observations')
-        self.mod_values_0d = fd.Function(self.fs_points_0d, name='model values')
+        if self.obs_param == 'elev':
+            self.obs_values_0d_elev = fd.Function(self.fs_points_0d, name='elev observations')
+            self.mod_values_0d_elev = fd.Function(self.fs_points_0d, name='elev model values')
+        else:
+            self.obs_values_0d_u = fd.Function(self.fs_points_0d, name='u observations')
+            self.obs_values_0d_v = fd.Function(self.fs_points_0d, name='v observations')
+            self.mod_values_0d_u = fd.Function(self.fs_points_0d, name='u model values')
+            self.mod_values_0d_v = fd.Function(self.fs_points_0d, name='v model values')
         self.indicator_0d = fd.Function(self.fs_points_0d, name='station use indicator')
         self.indicator_0d.assign(1.0)
-        self.cost_function_scaling_0d = domain_constant(0.0, mesh0d)
+        self.cost_function_scaling_0d = fd.Constant(0.0, domain=mesh0d)
         self.cost_function_scaling_0d.assign(self.cost_function_scaling)
         self.station_weight_0d = fd.Function(self.fs_points_0d, name='station-wise weighting')
         self.station_weight_0d.assign(1.0)
@@ -486,8 +647,11 @@ class StationObservationManager:
             interp_kw.update({'bounds_error': False, 'fill_value': 0.0})
 
         # Construct timeseries interpolator
-        self.station_interpolators = []
+        self.station_interpolators_elev = []
+        self.station_interpolators_u = []
+        self.station_interpolators_v = []
         self.local_station_index = []
+
         if len(mesh0d.coordinates.dat.data[:]) > 0:
             for i in range(self.fs_points_0d.dof_dset.size):
                 # loop over local DOFs and match coordinates to observations
@@ -500,15 +664,23 @@ class StationObservationManager:
 
                 x, y = xy[j, :]
                 t = self.observation_time[j]
-                v = self.observation_values[j]
                 x_mesh, y_mesh = mesh0d.coordinates.dat.data[i, :]
 
                 msg = 'bad station location ' \
-                    f'{j} {i} {x} {x_mesh} {y} {y_mesh} {x-x_mesh} {y-y_mesh}'
+                      f'{j} {i} {x} {x_mesh} {y} {y_mesh} {x - x_mesh} {y - y_mesh}'
                 assert numpy.allclose([x, y], [x_mesh, y_mesh]), msg
-                # create temporal interpolator
-                ip = interp1d(t, v, **interp_kw)
-                self.station_interpolators.append(ip)
+                if self.obs_param == 'elev':
+                    elev = self.observation_elev[j]
+                    # create temporal interpolator
+                    ip_elev = interp1d(t, elev, **interp_kw)
+                    self.station_interpolators_elev.append(ip_elev)
+                else:
+                    u = self.observation_u[j]
+                    v = self.observation_v[j]
+                    ip_u = interp1d(t, u, **interp_kw)
+                    ip_v = interp1d(t, v, **interp_kw)
+                    self.station_interpolators_u.append(ip_u)
+                    self.station_interpolators_v.append(ip_v)
 
         # Process start and end times for observations
         self.obs_start_times = numpy.array([
@@ -519,7 +691,13 @@ class StationObservationManager:
         ])
 
         # expressions for cost function
-        self.misfit_expr = self.obs_values_0d - self.mod_values_0d
+        if self.obs_param == 'elev':
+            self.misfit_expr_elev = self.obs_values_0d_elev - self.mod_values_0d_elev
+            self.misfit_expr = self.misfit_expr_elev
+        else:
+            self.misfit_expr_u = self.obs_values_0d_u - self.mod_values_0d_u
+            self.misfit_expr_v = self.obs_values_0d_v - self.mod_values_0d_v
+            self.misfit_expr = (self.misfit_expr_u ** 2 + self.misfit_expr_v ** 2) ** (1/2)
         self.initialized = True
 
     def eval_observation_at_time(self, t):
@@ -530,7 +708,13 @@ class StationObservationManager:
         :returns: list of observation time series values at time `t`
         """
         self.update_stations_in_use(t)
-        return [float(ip(t)) for ip in self.station_interpolators]
+        if self.obs_param == 'elev':
+            ip = [float(ip(t)) for ip in self.station_interpolators_elev]
+            return ip
+        else:
+            ip1 = [float(ip(t)) for ip in self.station_interpolators_u]
+            ip2 = [float(ip(t)) for ip in self.station_interpolators_v]
+            return ip1, ip2
 
     def eval_cost_function(self, t):
         """
@@ -542,16 +726,39 @@ class StationObservationManager:
         assert self.model_observation_field is not None, 'Model field not set.'
         self.simulation_time.append(t)
         # evaluate observations at simulation time and stash the result
-        obs_func = fd.Function(self.fs_points_0d)
-        obs_func.dat.data[:] = self.eval_observation_at_time(t)
-        self.obs_func_list.append(obs_func)
+        if self.obs_param == 'elev':
+            obs_func_elev = fd.Function(self.fs_points_0d)
+            obs_func_elev.dat.data[:] = self.eval_observation_at_time(t)
+            self.obs_func_elev_list.append(obs_func_elev)
 
-        # compute square error
-        self.obs_values_0d.assign(obs_func)
-        self.mod_values_0d.interpolate(self.model_observation_field, ad_block_tag='observation')
-        s = self.cost_function_scaling_0d * self.indicator_0d * self.station_weight_0d
-        self.J_misfit = fd.assemble(s * self.misfit_expr ** 2 * fd.dx, ad_block_tag='misfit_eval')
-        return self.J_misfit
+            # compute square error
+            self.obs_values_0d_elev.assign(obs_func_elev)
+            P1_2d = get_functionspace(self.mesh, 'CG', 1)
+            elev_mod = fd.Function(P1_2d, name='elev')
+            elev_mod.project(self.model_observation_field)
+            self.mod_values_0d_elev.interpolate(elev_mod, ad_block_tag='elev observation')
+            s = self.cost_function_scaling_0d * self.indicator_0d * self.station_weight_0d
+            self.J_misfit = fd.assemble(s * self.misfit_expr ** 2 * fd.dx, ad_block_tag='misfit_eval')
+            return self.J_misfit
+        else:
+            obs_func_u, obs_func_v = fd.Function(self.fs_points_0d), fd.Function(self.fs_points_0d)
+            obs_func_u.dat.data[:], obs_func_v.dat.data[:] = self.eval_observation_at_time(t)
+            self.obs_func_u_list.append(obs_func_u)
+            self.obs_func_v_list.append(obs_func_v)
+
+            # compute square error
+            self.obs_values_0d_u.assign(obs_func_u)
+            self.obs_values_0d_v.assign(obs_func_v)
+            P1_2d = get_functionspace(self.mesh, 'CG', 1)
+            u_mod = fd.Function(P1_2d, name='u velocity')
+            v_mod = fd.Function(P1_2d, name='v velocity')
+            u_mod.project(self.model_observation_field[0])
+            v_mod.project(self.model_observation_field[1])
+            self.mod_values_0d_u.interpolate(u_mod, ad_block_tag='u observation')
+            self.mod_values_0d_v.interpolate(v_mod, ad_block_tag='v observation')
+            s = self.cost_function_scaling_0d * self.indicator_0d * self.station_weight_0d
+            self.J_misfit = fd.assemble(s * self.misfit_expr ** 2 * fd.dx, ad_block_tag='misfit_eval')
+            return self.J_misfit
 
     def dump_time_series(self):
         """
@@ -571,28 +778,58 @@ class StationObservationManager:
 
         create_directory(self.output_directory)
         tape = get_working_tape()
-        blocks = tape.get_blocks(tag='observation')
-        ts_data = [b.get_outputs()[0].saved_output.dat.data for b in blocks]
-        # shape (ntimesteps, nstations)
-        ts_data = numpy.array(ts_data)
-        # append
-        self.station_value_progress.append(ts_data)
-        var = self.variable
-        for ilocal, iglobal in enumerate(self.local_station_index):
-            name = self.station_names[iglobal]
-            # collect time series data, shape (niters, ntimesteps)
-            ts = numpy.array([s[:, ilocal] for s in self.station_value_progress])
-            fn = f'diagnostic_timeseries_progress_{name}_{var}.hdf5'
-            fn = os.path.join(self.output_directory, fn)
-            with h5py.File(fn, 'w') as hdf5file:
-                hdf5file.create_dataset(var, data=ts)
-                hdf5file.create_dataset('time', data=numpy.array(self.simulation_time))
-                attrs = {
-                    'x': self.observation_x[iglobal],
-                    'y': self.observation_y[iglobal],
-                    'location_name': name,
-                }
-                hdf5file.attrs.update(attrs)
+        if self.obs_param == 'elev':
+            blocks_elev = tape.get_blocks(tag='elev observation')
+            ts_data_elev = [b.get_outputs()[0].saved_output.dat.data for b in blocks_elev]
+            # shape (ntimesteps, nstations)
+            ts_data_elev = numpy.array(ts_data_elev)
+            # append
+            self.station_value_elev_progress.append(ts_data_elev)
+            var = self.variable
+            for ilocal, iglobal in enumerate(self.local_station_index):
+                name = self.station_names[iglobal]
+                # collect time series data, shape (niters, ntimesteps)
+                ts_elev = numpy.array([s[:, ilocal] for s in self.station_value_elev_progress])
+                fn = f'diagnostic_timeseries_progress_{name}_{var}.hdf5'
+                fn = os.path.join(self.output_directory, fn)
+                with h5py.File(fn, 'w') as hdf5file:
+                    hdf5file.create_dataset('elev', data=ts_elev)
+                    hdf5file.create_dataset('time', data=numpy.array(self.simulation_time))
+                    attrs = {
+                        'x': self.observation_x[iglobal],
+                        'y': self.observation_y[iglobal],
+                        'location_name': name,
+                    }
+                    hdf5file.attrs.update(attrs)
+        else:
+            blocks_u = tape.get_blocks(tag='u observation')
+            blocks_v = tape.get_blocks(tag='v observation')
+            ts_data_u = [b.get_outputs()[0].saved_output.dat.data for b in blocks_u]
+            ts_data_v = [b.get_outputs()[0].saved_output.dat.data for b in blocks_v]
+            # shape (ntimesteps, nstations)
+            ts_data_u = numpy.array(ts_data_u)
+            ts_data_v = numpy.array(ts_data_v)
+            # append
+            self.station_value_u_progress.append(ts_data_u)
+            self.station_value_v_progress.append(ts_data_v)
+            var = self.variable
+            for ilocal, iglobal in enumerate(self.local_station_index):
+                name = self.station_names[iglobal]
+                # collect time series data, shape (niters, ntimesteps)
+                ts_u = numpy.array([s[:, ilocal] for s in self.station_value_u_progress])
+                ts_v = numpy.array([s[:, ilocal] for s in self.station_value_v_progress])
+                fn = f'diagnostic_timeseries_progress_{name}_{var}.hdf5'
+                fn = os.path.join(self.output_directory, fn)
+                with h5py.File(fn, 'w') as hdf5file:
+                    hdf5file.create_dataset('u', data=ts_u)
+                    hdf5file.create_dataset('v', data=ts_v)
+                    hdf5file.create_dataset('time', data=numpy.array(self.simulation_time))
+                    attrs = {
+                        'x': self.observation_x[iglobal],
+                        'y': self.observation_y[iglobal],
+                        'location_name': name,
+                    }
+                    hdf5file.attrs.update(attrs)
 
 
 class RegularizationCalculator(abc.ABC):
@@ -613,7 +850,7 @@ class RegularizationCalculator(abc.ABC):
         self.regularization_expr = 0
         self.mesh = function.function_space().mesh()
         # calculate mesh area (to scale the cost function)
-        self.mesh_area = fd.assemble(fd.Constant(1.0) * fd.dx(domain=self.mesh))
+        self.mesh_area = fd.assemble(fd.Constant(1.0, domain=self.mesh) * fd.dx)
         self.name = function.name()
 
     def eval_cost_function(self):

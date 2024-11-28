@@ -209,6 +209,7 @@ class DiagnosticCallback(ABC):
         if init_date is not None and include_time:
             time_units = 'seconds since ' + init_date.isoformat()
             self.var_attrs['time'] = {'units': time_units}
+            self.attrs['simulation_initial_date'] = init_date.isoformat()
 
     def set_write_mode(self, mode):
         """

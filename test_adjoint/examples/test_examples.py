@@ -15,7 +15,8 @@ os.environ['THETIS_REGRESSION_TEST'] = "1"
 # list of all adjoint examples to run
 adjoint_files = [
     'tidalfarm/tidalfarm.py',
-    # 'channel_inversion/inverse_problem.py',  # FIXME requires obs time series
+    'channel_inversion/inverse_problem.py',
+    'headland_inversion/inverse_problem.py',
 ]
 
 cwd = os.path.abspath(os.path.dirname(__file__))
