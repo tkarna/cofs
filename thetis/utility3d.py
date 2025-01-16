@@ -527,8 +527,8 @@ class ExpandFunctionTo3d(object):
                     }
                 }
             }""" % {'nodes': self.fs_2d.finat_element.space_dimension(),
-                    'func2d_dim': self.input_2d.function_space().block_size,
-                    'func3d_dim': self.fs_3d.block_size,
+                    'func2d_dim': self.input_2d.function_space().value_size,
+                    'func3d_dim': self.fs_3d.value_size,
                     'v_nodes': n_vert_nodes},
             'my_kernel')
 
@@ -664,8 +664,8 @@ class SubFunctionExtractor(object):
                         }
                     }
                 }""" % {'nodes': self.output_2d.cell_node_map().arity,
-                        'func2d_dim': self.output_2d.function_space().block_size,
-                        'func3d_dim': self.fs_3d.block_size},
+                        'func2d_dim': self.output_2d.function_space().value_size,
+                        'func3d_dim': self.fs_3d.value_size},
                 'my_kernel')
         else:
             self.kernel = op2.Kernel("""
@@ -676,8 +676,8 @@ class SubFunctionExtractor(object):
                         }
                     }
                 }""" % {'nodes': self.output_2d.cell_node_map().arity,
-                        'func2d_dim': self.output_2d.function_space().block_size,
-                        'func3d_dim': self.fs_3d.block_size},
+                        'func2d_dim': self.output_2d.function_space().value_size,
+                        'func3d_dim': self.fs_3d.value_size},
                 'my_kernel')
 
         if self.do_hdiv_scaling:
@@ -771,8 +771,8 @@ class ALEMeshUpdater(object):
                     }
                 }
             }""" % {'nodes': self.fs_2d.finat_element.space_dimension(),
-                    'func2d_dim': self.fs_2d.block_size,
-                    'func3d_dim': self.fs_3d.block_size,
+                    'func2d_dim': self.fs_2d.value_size,
+                    'func3d_dim': self.fs_3d.value_size,
                     'v_nodes': n_vert_nodes},
             'my_kernel')
 
@@ -790,8 +790,8 @@ class ALEMeshUpdater(object):
                     }
                 }
             }""" % {'nodes': self.fs_2d.finat_element.space_dimension(),
-                    'func2d_dim': self.fs_2d.block_size,
-                    'func3d_dim': self.fs_3d.block_size,
+                    'func2d_dim': self.fs_2d.value_size,
+                    'func3d_dim': self.fs_3d.value_size,
                     'v_nodes': n_vert_nodes},
             'my_kernel')
 

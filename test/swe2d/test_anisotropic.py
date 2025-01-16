@@ -73,7 +73,21 @@ def run(solve_adjoint=False, mesh=None, **model_options):
     options.use_grad_depth_viscosity_term = False
     options.no_exports = True
     options.update(model_options)
-    solver_obj.create_function_spaces()
+    solver_obj.create_equations()
+
+    # recover Hessian
+    if not solve_adjoint:
+        if 'hessian_2d' in field_metadata:
+            field_metadata.pop('hessian_2d')
+        P1t_2d = get_functionspace(mesh2d, 'CG', 1, tensor=True)
+        hessian_2d = Function(P1t_2d)
+        u_2d = solver_obj.fields.uv_2d[0]
+        hessian_calculator = thetis.diagnostics.HessianRecoverer2D(u_2d, hessian_2d)
+        solver_obj.add_new_field(hessian_2d,
+                                 'hessian_2d',
+                                 'Hessian of x-velocity',
+                                 'Hessian2d',
+                                 preproc_func=hessian_calculator)
 
     # apply boundary conditions
     solver_obj.bnd_functions['shallow_water'] = {
@@ -121,36 +135,12 @@ def run(solve_adjoint=False, mesh=None, **model_options):
     farm_options.turbine_options.diameter = D
     C_T = thrust_coefficient * correction
     farm_options.turbine_options.thrust_coefficient = C_T
-    solver_obj.options.tidal_turbine_farms['everywhere'] = [farm_options]
-    solver_obj.create_equations()
+    solver_obj.options.tidal_turbine_farms['everywhere'] = farm_options
 
-    # recover Hessian
-    if not solve_adjoint:
-        if 'hessian_2d' in field_metadata:
-            field_metadata.pop('hessian_2d')
-        P1t_2d = get_functionspace(mesh2d, 'CG', 1, tensor=True)
-        hessian_2d = Function(P1t_2d)
-        u_2d = solver_obj.fields.uv_2d[0]
-        hessian_calculator = thetis.diagnostics.HessianRecoverer2D(u_2d, hessian_2d)
-        solver_obj.add_new_field(hessian_2d,
-                                 'hessian_2d',
-                                 'Hessian of x-velocity',
-                                 'Hessian2d',
-                                 preproc_func=hessian_calculator)
-
-    # Apply initial guess of inflow velocity and solve
+    # apply initial guess of inflow velocity, solve and return number of nonlinear solver iterations
     solver_obj.assign_initial_conditions(uv=inflow_velocity)
     solver_obj.iterate()
-
     if not solve_adjoint:
-        # Check that turbines have been picked up
-        assert not np.allclose(solver_obj.fields.uv_2d.dat.data[0], 0.5, atol=1e-3)
-
-        # Check the turbine density has been set up correctly
-        total_turbine_density = assemble(solver_obj.tidal_farms[0].turbine_density * dx)
-        assert np.isclose(total_turbine_density, 2, atol=0.01), f"Expected 2, but got {total_turbine_density}"
-
-        # Return number of nonlinear solver iterations
         return solver_obj.timestepper.solver.snes.getIterationNumber()
 
     # quantity of interest: power output

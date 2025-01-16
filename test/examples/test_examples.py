@@ -39,7 +39,6 @@ exclude_files = [
     'tidalfarm/tidalfarm.py',
     'tidal_barrage/plotting.py',
     'channel_inversion/plot_elevation_progress.py',
-    'channel_inversion/inverse_problem.py',
     'tohoku_inversion/okada.py',
     'tohoku_inversion/plot_convergence.py',
     'tohoku_inversion/plot_elevation_initial_guess.py',

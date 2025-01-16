@@ -529,9 +529,6 @@ class DetectorsCallback(DiagnosticCallback):
         self.field_names = field_names
         self._name = name
 
-        # initialise interpolation functions using vom_interpolator_functions
-        self.interp_functions = vom_interpolator_functions(solver_obj, field_names, detector_locations)
-
     @property
     def name(self):
         return self._name
@@ -542,8 +539,7 @@ class DetectorsCallback(DiagnosticCallback):
 
     def _values_per_field(self, values):
         """
-        Given all values evaulated in a detector location, return the values per field
-        """
+        Given all values evaulated in a detector location, return the values per field"""
         i = 0
         result = []
         for dim in self.field_dims:
@@ -558,11 +554,7 @@ class DetectorsCallback(DiagnosticCallback):
             for name, values in zip(self.detector_names, args))
 
     def _evaluate_field(self, field_name):
-        field = self.solver_obj.fields[field_name]
-        f_at_points, f_at_input_points = self.interp_functions[field_name]
-        f_at_points.interpolate(field)
-        f_at_input_points.interpolate(f_at_points)
-        return f_at_input_points.dat.data_ro[:]
+        return self.solver_obj.fields[field_name](self.detector_locations)
 
     def __call__(self):
         """
@@ -692,16 +684,10 @@ class TimeSeriesCallback2D(DiagnosticCallback):
         xyz = (self.x, self.y, self.z) if self.on_sphere else (self.x, self.y)
         self.xyz = numpy.array([xyz])
 
-        # initialise interpolation functions using vom_interpolator_functions
-        self.interp_functions = vom_interpolator_functions(self.solver_obj, self.fieldnames, self.xyz)
-
         # test evaluation
         try:
             if self.eval_func is None:
-                field = self.solver_obj.fields[self.fieldnames[0]]
-                f_at_points, f_at_input_points = self.interp_functions[self.fieldnames[0]]
-                f_at_points.interpolate(field)
-                f_at_input_points.interpolate(f_at_points)
+                self.solver_obj.fields.bathymetry_2d.at(self.xyz, tolerance=self.tolerance)
             else:
                 self.eval_func(self.solver_obj.fields.bathymetry_2d, self.xyz, tolerance=self.tolerance)
         except PointNotInDomainError as e:
@@ -721,10 +707,7 @@ class TimeSeriesCallback2D(DiagnosticCallback):
             try:
                 field = self.solver_obj.fields[fieldname]
                 if self.eval_func is None:
-                    f_at_points, f_at_input_points = self.interp_functions[fieldname]
-                    f_at_points.interpolate(field)
-                    f_at_input_points.interpolate(f_at_points)
-                    val = f_at_input_points.dat.data_ro[:]
+                    val = field.at(self.xyz, tolerance=self.tolerance)
                 else:
                     val = self.eval_func(field, self.xyz, tolerance=self.tolerance)
                 arr = numpy.array(val)

@@ -22,11 +22,11 @@ def get_visu_space(fs):
     """
     mesh = fs.mesh()
     family = 'Lagrange' if is_cg(fs) else 'Discontinuous Lagrange'
-    if len(fs.value_shape) == 1:
-        dim = fs.value_shape[0]
+    if len(fs.ufl_element().value_shape) == 1:
+        dim = fs.ufl_element().value_shape[0]
         visu_fs = get_functionspace(mesh, family, 1, family, 1,
                                     vector=True, dim=dim)
-    elif len(fs.value_shape) == 2:
+    elif len(fs.ufl_element().value_shape) == 2:
         visu_fs = get_functionspace(mesh, family, 1, family, 1,
                                     tensor=True)
     else:

@@ -15,7 +15,7 @@ os.environ['THETIS_REGRESSION_TEST'] = "1"
 # list of all adjoint examples to run
 adjoint_files = [
     'tidalfarm/tidalfarm.py',
-    'channel_inversion/inverse_problem.py',
+    # 'channel_inversion/inverse_problem.py',  # FIXME requires obs time series
 ]
 
 cwd = os.path.abspath(os.path.dirname(__file__))
@@ -34,8 +34,6 @@ def example_file(request):
 
 def test_examples(example_file, tmpdir, monkeypatch):
     assert os.path.isfile(example_file), 'File not found {:}'.format(example_file)
-    if 'examples/channel_inversion/inverse_problem.py' in example_file:
-        pytest.xfail("Known issue with Firedrake and mixed function spaces. See Firedrake issue #3368.")
     # copy mesh files
     source = os.path.dirname(example_file)
     for f in glob.glob(os.path.join(source, '*.msh')):
