@@ -66,9 +66,11 @@ options.tracer_only = True
 # computation functionality is switched off and the simulation time is
 # split into 600 steps, giving a timestep close to the CFL limit. ::
 
+t_end = 2*pi
+timestep = pi/300.0
 options.tracer_timestepper_type = 'SSPRK33'
-options.timestep = pi/300.0
-options.simulation_end_time = 2*pi
+options.timestep = timestep
+options.simulation_end_time = t_end
 options.simulation_export_time = pi/15.0
 options.tracer_timestepper_options.use_automatic_timestep = False
 
@@ -87,6 +89,7 @@ solver_obj.bnd_functions['tracer_2d'] = {'on_boundary': {'value': Constant(1.0)}
 
 # The velocity field is set up using a simple analytic expression. ::
 
+x, y = SpatialCoordinate(mesh2d)
 uv_init = as_vector([0.5 - y, x - 0.5])
 
 # Now, we set up the cosine-bell--cone--slotted-cylinder initial condition. The
@@ -116,9 +119,15 @@ slot_cyl = conditional(
 q_init = Function(P1_2d).interpolate(1.0 + bell + cone + slot_cyl)
 solver_obj.assign_initial_conditions(uv=uv_init, tracer_2d=q_init)
 
-# Now we are in a position to run the time loop. ::
+# Now we are in a position to run the time loop. We can either automatically run
+# the time loop to the end time as in :doc:`2D channel example <demo_2d_channel.py>`
+# or call a time iterator to explicitly run the time loop, by issuing ::
 
-solver_obj.iterate()
+thetis_timestepper = solver_obj.create_iterator()
+t_Thetis = 0
+
+while t_Thetis < t_end - timestep:
+    t_Thetis = next(thetis_timestepper)
 
 # Finally, we display the normalised :math:`L^2` error, by comparing to the initial condition. ::
 
