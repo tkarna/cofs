@@ -6,6 +6,7 @@ import firedrake as fd
 import pyproj
 import numpy
 from abc import ABC, abstractmethod
+import warnings
 
 LL_WGS84 = pyproj.Proj(proj='latlong', datum='WGS84', errcheck=True)
 
@@ -147,8 +148,12 @@ def get_vector_rotation_matrix(trans, x, y, delta=None):
     """
     if delta is None:
         delta = 1e-6  # ~1 m in LL_WGS84
-    x1, y1 = trans.transform(x, y)
-    x2, y2 = trans.transform(x, y + delta)
+    with warnings.catch_warnings():
+        # supress spurious DeprecationWarning in numpy 1.25
+        # (see https://github.com/pyproj4/pyproj/issues/1307)
+        warnings.simplefilter("ignore", category=DeprecationWarning)
+        x1, y1 = trans.transform(x, y)
+        x2, y2 = trans.transform(x, y + delta)
     dxdl = (x2 - x1) / delta
     dydl = (y2 - y1) / delta
     theta = numpy.arctan2(-dxdl, dydl)

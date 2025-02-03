@@ -4,6 +4,7 @@ Classes for computing diagnostics.
 from .utility import *
 from .configuration import *
 from abc import ABCMeta, abstractmethod
+from firedrake.ufl_expr import extract_unique_domain
 
 __all__ = ["VorticityCalculator2D", "HessianRecoverer2D", "KineticEnergyCalculator",
            "ShallowWaterDualWeightedResidual2D", "TracerDualWeightedResidual2D"]
@@ -259,8 +260,9 @@ class DualWeightedResidual2D(DiagnosticCalculator):
         if mesh2d.topological_dimension() != 2:
             dim = mesh2d.topological_dimension()
             raise ValueError(f"Expected a mesh of dimension 2, not {dim}")
-        if mesh2d != dual.ufl_domain():
-            raise ValueError(f"Mismatching meshes ({mesh2d} vs {func.ufl_domain()})")
+        dual_mesh = extract_unique_domain(dual)
+        if mesh2d != dual_mesh:
+            raise ValueError(f"Mismatching meshes ({mesh2d} vs {dual_mesh})")
         self.F = replace(self.form, {TestFunction(self.space): dual})
 
     @abstractmethod

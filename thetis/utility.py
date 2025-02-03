@@ -9,6 +9,7 @@ from collections import OrderedDict, namedtuple  # NOQA
 import ufl  # NOQA
 from firedrake import *
 from firedrake.petsc import PETSc
+from firedrake.ufl_expr import extract_unique_domain
 from mpi4py import MPI  # NOQA
 from pyop2.profiling import timed_stage  # NOQA
 import numpy
@@ -1125,7 +1126,7 @@ def form2indicator(F):
     """
     if len(F.arguments()) > 0:
         raise ValueError("Input form should be 0-form")
-    mesh = F.ufl_domain()
+    mesh = extract_unique_domain(F)
     P0 = FunctionSpace(mesh, "DG", 0)
     p0test = TestFunction(P0)
     h = ufl.CellVolume(mesh)

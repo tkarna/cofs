@@ -42,7 +42,7 @@ import glob
 import os
 from .timezone import *
 from .log import *
-import scipy.spatial.qhull as qhull
+from scipy.spatial import Delaunay, QhullError
 import netCDF4
 from abc import ABC, abstractmethod
 from firedrake import *
@@ -190,7 +190,7 @@ class GridInterpolator(object):
         self.cannot_interpolate = False
         try:
             d = ngrid_xyz.shape[1]
-            tri = qhull.Delaunay(ngrid_xyz)
+            tri = Delaunay(ngrid_xyz)
             # NOTE this becomes expensive in 3D for npoints > 10k
             simplex = tri.find_simplex(ntarget_xyz)
             vertices = numpy.take(tri.simplices, simplex, axis=0)
@@ -208,7 +208,7 @@ class GridInterpolator(object):
                 from scipy.spatial import cKDTree
                 dist, ix = cKDTree(ngrid_xyz).query(ntarget_xyz[self.outside])
                 self.outside_to_nearest = ix
-        except qhull.QhullError as e:
+        except QhullError as e:
             if not dont_raise:
                 raise e
             self.cannot_interpolate = True
@@ -312,7 +312,7 @@ def _get_subset_nodes(grid_x, grid_y, target_x, target_y):
     orig_shape = grid_x.shape
     grid_xy = numpy.array((grid_x.ravel(), grid_y.ravel())).T
     target_xy = numpy.array((target_x.ravel(), target_y.ravel())).T
-    tri = qhull.Delaunay(grid_xy)
+    tri = Delaunay(grid_xy)
     simplex = tri.find_simplex(target_xy)
     vertices = numpy.take(tri.simplices, simplex, axis=0)
     nodes = numpy.unique(vertices.ravel())

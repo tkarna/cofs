@@ -225,9 +225,9 @@ class ShallowWaterTerm(Term):
         p = self.function_space.ufl_element().degree()
         self.quad_degree = 2*p + 1
         self.dx = dx(degree=self.quad_degree,
-                     domain=self.function_space.ufl_domain())
+                     domain=self.function_space.mesh())
         self.dS = dS(degree=self.quad_degree,
-                     domain=self.function_space.ufl_domain())
+                     domain=self.function_space.mesh())
 
     def get_bnd_functions(self, eta_in, uv_in, bnd_id, bnd_conditions):
         """

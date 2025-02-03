@@ -889,11 +889,11 @@ class ModelOptions2d(CommonModelOptions):
 
         Note this is only relevant if `use_automatic_wetting_and_drying_alpha` is set to ``True``.
         """).tag(config=True)
-    tidal_turbine_farms = Dict(trait=List(TidalTurbineFarmOptions()), default_value={},
+    tidal_turbine_farms = Dict(value_trait=List(TidalTurbineFarmOptions()), default_value={},
                                help='Dictionary mapping subdomain ids to a list of TidalTurbineFarmOptions instances '
                                     'corresponding to one or more farms.')
 
-    discrete_tidal_turbine_farms = Dict(trait=List(DiscreteTidalTurbineFarmOptions()), default_value={},
+    discrete_tidal_turbine_farms = Dict(value_trait=List(DiscreteTidalTurbineFarmOptions()), default_value={},
                                         help='Dictionary mapping subdomain ids to a list of DiscreteTidalTurbineFarmOptions '
                                              'instances corresponding to one or more farms.')
 
