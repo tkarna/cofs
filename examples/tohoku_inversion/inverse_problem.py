@@ -73,6 +73,10 @@ end_times = [dat["end"] for dat in stations.values()]
 sta_manager = inversion_tools.StationObservationManager(
     mesh2d, output_directory=options.output_directory
 )
+# Define the scaling for the cost function so that dJ/dm ~ O(1)
+# TODO: Update scaling to depend on number of DOFs in the problem
+cost_function_scaling = domain_constant(10000000 * solver_obj.dt / options.simulation_end_time, mesh2d)
+sta_manager.cost_function_scaling = cost_function_scaling
 sta_manager.load_observation_data(
     observation_data_dir,
     station_names,
@@ -82,8 +86,7 @@ sta_manager.load_observation_data(
 )
 sta_manager.set_model_field(solver_obj.fields.elev_2d)
 
-# Define the scaling for the cost function so that J ~ O(1)
-J_scalar = Constant(solver_obj.dt / options.simulation_end_time)
+J_scalar = sta_manager.cost_function_scaling
 
 # Create inversion manager and add controls
 no_exports = os.getenv("THETIS_REGRESSION_TEST") is not None

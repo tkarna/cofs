@@ -34,8 +34,6 @@ def example_file(request):
 
 def test_examples(example_file, tmpdir, monkeypatch):
     assert os.path.isfile(example_file), 'File not found {:}'.format(example_file)
-    if 'examples/channel_inversion/inverse_problem.py' in example_file:
-        pytest.xfail("Known issue with Firedrake and mixed function spaces. See Firedrake issue #3368.")
     # copy mesh files
     source = os.path.dirname(example_file)
     for f in glob.glob(os.path.join(source, '*.msh')):
