@@ -14,6 +14,7 @@ import numpy
 class TidalTurbine:
     def __init__(self, options, upwind_correction=False):
         self.diameter = options.diameter
+        self.projected_diameter = options.projected_diameter or self.diameter
         self.C_support = options.C_support
         self.A_support = options.A_support
         self.upwind_correction = upwind_correction
@@ -29,7 +30,7 @@ class TidalTurbine:
     def velocity_correction(self, uv, depth):
         fric = self._thrust_area(uv)
         if self.upwind_correction:
-            return 0.5*(1+sqrt(1-fric/(self.diameter*depth)))
+            return 0.5*(1+sqrt(1-fric/(self.projected_diameter*depth)))
         else:
             return 1
 
@@ -41,7 +42,7 @@ class TidalTurbine:
     def power(self, uv, depth):
         # ratio of discrete to upstream velocity (NOTE: should include support drag!)
         alpha = self.velocity_correction(uv, depth)
-        A_T = pi * self.diameter**2 / 4
+        A_T = pi * self.diameter**2 / 4  # power is based on true turbine diameter
         uv3 = dot(uv, uv)**1.5 / alpha**3  # upwind cubed velocity
         C_P = self.power_coefficient(uv3**(1/3))
         # this assumes the velocity through the turbine does not change due to the support (is this correct?)
@@ -156,7 +157,7 @@ class DiscreteTidalTurbineFarm(TidalTurbineFarm):
         """
         x = SpatialCoordinate(self.mesh)
 
-        radius = self.turbine.diameter * 0.5
+        radius = self.turbine.projected_diameter * 0.5
         for coord in coordinates:
             dx0 = (x[0] - coord[0])/radius
             dx1 = (x[1] - coord[1])/radius

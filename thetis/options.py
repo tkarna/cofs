@@ -462,6 +462,9 @@ class TidalTurbineOptions(FrozenHasTraits):
     name = 'Tidal turbine options'
     diameter = PositiveFloat(
         18., help='Turbine diameter').tag(config=True)
+    projected_diameter = PositiveFloat(
+        None, allow_none=True, help='Extent over which turbine drag is applied'
+                                    '(defaults to diameter if not provided)').tag(config=True)
     C_support = NonNegativeFloat(
         0., help='Thrust coefficient for support structure').tag(config=True)
     A_support = NonNegativeFloat(
