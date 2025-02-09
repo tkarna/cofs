@@ -35,12 +35,12 @@ jobs:
         run: |
           . /home/firedrake/firedrake/bin/activate
           python $(which firedrake-clean)
-          python -m pytest -n 12 -v test
+          python -m pytest --durations=0 -n 12 -v test
       - name: Test Thetis adjoint
         run: |
           . /home/firedrake/firedrake/bin/activate
           python $(which firedrake-clean)
-          python -m pytest -n 12 -v test_adjoint
+          python -m pytest --durations=0 -n 12 -v test_adjoint
       - name: Lint
         if: ${{ always() }}
         run: |
